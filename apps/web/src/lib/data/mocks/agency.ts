@@ -1,54 +1,31 @@
+// Sesión y agencia placeholder para sprint 1 (auth real llega en Fase 2).
+// Solo el usuario actual (Marc) — sin equipo ficticio. Cuando Auth.js v5 esté
+// activo, esto se reemplaza por session real de Supabase.
+
 import type { Agency, AgencyMember, User } from '../types';
 import { daysAgo } from './_helpers';
 
 export const currentAgency: Agency = {
-  id: 'agency-001',
-  name: 'Inmobiliaria Sant Antoni',
+  id: 'agency-dev',
+  name: 'Lince (desarrollo)',
   plan: 'founder',
   active: true,
-  createdAt: daysAgo(28),
+  createdAt: daysAgo(3),
 };
 
-export const usersMock: User[] = [
-  {
-    id: 'user-001',
-    email: 'marc@inmosantantoni.cat',
-    name: 'Marc Sanjuan',
-    createdAt: daysAgo(28),
-  },
-  {
-    id: 'user-002',
-    email: 'laura@inmosantantoni.cat',
-    name: 'Laura Vidal',
-    createdAt: daysAgo(25),
-  },
-  {
-    id: 'user-003',
-    email: 'pau@inmosantantoni.cat',
-    name: 'Pau Riera',
-    createdAt: daysAgo(20),
-  },
-];
+export const currentUser: User = {
+  id: 'user-marc',
+  email: 'marc@gnerai.com',
+  name: 'Marc Sanjuan',
+  createdAt: daysAgo(3),
+};
 
-export const currentUser: User = usersMock[0]!;
-
+// Solo el owner real (Marc) hasta que haya invitaciones por Auth.js
 export const agencyMembersMock: AgencyMember[] = [
   {
     agencyId: currentAgency.id,
-    userId: 'user-001',
+    userId: currentUser.id,
     role: 'owner',
-    user: usersMock[0]!,
-  },
-  {
-    agencyId: currentAgency.id,
-    userId: 'user-002',
-    role: 'agent',
-    user: usersMock[1]!,
-  },
-  {
-    agencyId: currentAgency.id,
-    userId: 'user-003',
-    role: 'agent',
-    user: usersMock[2]!,
+    user: currentUser,
   },
 ];
