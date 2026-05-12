@@ -12,11 +12,6 @@ export interface CreateZoneAlertInput {
   payload?: Prisma.InputJsonValue;
 }
 
-/**
- * Crea una fila de alerta. Si ya existe (mismo trigger para misma propiedad
- * en la misma zona) la devuelve sin duplicar — el unique constraint hace el
- * dedup en DB. Devuelve `created: true` cuando es nueva.
- */
 export async function upsertZoneAlert(input: CreateZoneAlertInput): Promise<{
   id: string;
   created: boolean;
@@ -36,7 +31,6 @@ export async function upsertZoneAlert(input: CreateZoneAlertInput): Promise<{
     });
     return { id: row.id, created: true, status: row.status };
   } catch (err) {
-    // Unique violation → ya existe
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       const existing = await prisma.zoneAlert.findFirst({
         where: {
@@ -73,6 +67,13 @@ export async function markAlertSkipped(id: string, reason: string): Promise<void
   });
 }
 
+export async function resetAlertToPending(id: string): Promise<void> {
+  await prisma.zoneAlert.update({
+    where: { id },
+    data: { status: 'pending', error: null },
+  });
+}
+
 export async function listPendingAlerts(limit = 100) {
   return prisma.zoneAlert.findMany({
     where: { status: 'pending' },
@@ -82,4 +83,52 @@ export async function listPendingAlerts(limit = 100) {
       zone: true,
     },
   });
+}
+
+export async function listAlertsForAgency(agencyId: string, limit = 200) {
+  const alerts = await prisma.zoneAlert.findMany({
+    where: { zone: { agencyId } },
+    take: limit,
+    orderBy: { createdAt: 'desc' },
+    include: { zone: true },
+  });
+  if (alerts.length === 0) return [];
+  const propIds = Array.from(new Set(alerts.map((a) => a.propertyId)));
+  const properties = await prisma.property.findMany({
+    where: { id: { in: propIds } },
+    select: {
+      id: true,
+      address: true,
+      city: true,
+      postalCode: true,
+      price: true,
+      sourceUrl: true,
+    },
+  });
+  const byId = new Map(properties.map((p) => [p.id, p]));
+  return alerts.map((a) => ({
+    ...a,
+    property: byId.get(a.propertyId) ?? {
+      id: a.propertyId,
+      address: null,
+      city: null,
+      postalCode: null,
+      price: null,
+      sourceUrl: null,
+    },
+  }));
+}
+
+export async function getAlertStatusCounts(agencyId: string) {
+  const rows = await prisma.$queryRawUnsafe<Array<{ status: string; n: bigint }>>(
+    `SELECT za.status::text, COUNT(*)::bigint AS n
+     FROM zone_alerts za
+     JOIN zones z ON z.id = za.zone_id
+     WHERE z.agency_id = $1::uuid
+     GROUP BY za.status`,
+    agencyId,
+  );
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.status] = Number(r.n);
+  return out;
 }
