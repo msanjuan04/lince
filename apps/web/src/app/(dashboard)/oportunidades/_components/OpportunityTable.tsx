@@ -17,10 +17,11 @@ import type { Property } from '@/lib/data/types';
 
 interface OpportunityTableProps {
   properties: Property[];
+  trackedSet: Set<string>;
   onSelect: (id: string) => void;
 }
 
-export function OpportunityTable({ properties, onSelect }: OpportunityTableProps) {
+export function OpportunityTable({ properties, trackedSet, onSelect }: OpportunityTableProps) {
   if (properties.length === 0) {
     return (
       <div className="border-border flex flex-col items-center justify-center gap-3 border py-16 text-center">
@@ -68,7 +69,12 @@ export function OpportunityTable({ properties, onSelect }: OpportunityTableProps
         </TableHeader>
         <TableBody>
           {properties.map((p) => (
-            <PropertyRow key={p.id} property={p} onSelect={onSelect} />
+            <PropertyRow
+              key={p.id}
+              property={p}
+              isTracked={trackedSet.has(p.id)}
+              onSelect={onSelect}
+            />
           ))}
         </TableBody>
       </Table>
@@ -78,9 +84,11 @@ export function OpportunityTable({ properties, onSelect }: OpportunityTableProps
 
 function PropertyRow({
   property,
+  isTracked,
   onSelect,
 }: {
   property: Property;
+  isTracked: boolean;
   onSelect: (id: string) => void;
 }) {
   const discountPct = property.zoneDeltaPct;
@@ -103,7 +111,16 @@ function PropertyRow({
       </TableCell>
       <TableCell>
         <div className="flex flex-col gap-0.5">
-          <span className="line-clamp-1 text-sm font-medium">{property.address ?? '—'}</span>
+          <span className="line-clamp-1 text-sm font-medium">
+            {isTracked ? (
+              <span
+                aria-label="En seguimiento"
+                title="En seguimiento"
+                className="bg-highlight mr-1.5 inline-block size-1.5 rounded-full align-middle"
+              />
+            ) : null}
+            {property.address ?? '—'}
+          </span>
           <span className="text-muted-foreground text-xs">
             {property.city ?? '—'}
             {property.postalCode ? (

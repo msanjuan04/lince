@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Bookmark,
   Handshake,
   LayoutDashboard,
   Map,
@@ -30,9 +31,10 @@ const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/oportunidades', label: 'Oportunidades', icon: ScanSearch },
   { href: '/oportunidades/mapa', label: 'Mapa', icon: MapPin },
+  { href: '/seguimiento', label: 'Mi seguimiento', icon: Bookmark },
+  { href: '/zonas', label: 'Zonas', icon: Map },
   { href: '/captures', label: 'Captures', icon: Handshake },
   { href: '/listings', label: 'Listings', icon: Tag },
-  { href: '/zonas', label: 'Zonas', icon: Map },
   { href: '/configuracion', label: 'Configuración', icon: Settings },
 ] as const;
 

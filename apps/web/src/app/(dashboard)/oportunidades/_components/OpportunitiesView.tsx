@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useTransition } from 'react';
 import type { PriceHistoryEntry, Property } from '@/lib/data/types';
+import type { PropertyTrack } from '@/lib/data/tracking';
 import { OpportunityFilters } from './OpportunityFilters';
 import { OpportunityTable } from './OpportunityTable';
 import { OpportunityDetailSheet } from './OpportunityDetailSheet';
@@ -11,6 +12,8 @@ interface OpportunitiesViewProps {
   properties: Property[];
   selected: Property | null;
   selectedHistory: PriceHistoryEntry[];
+  selectedTrack: PropertyTrack | null;
+  trackedIds: string[];
   heroLabel: string;
   totalLabel: string;
 }
@@ -19,9 +22,12 @@ export function OpportunitiesView({
   properties,
   selected,
   selectedHistory,
+  selectedTrack,
+  trackedIds,
   heroLabel,
   totalLabel,
 }: OpportunitiesViewProps) {
+  const trackedSet = new Set(trackedIds);
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
@@ -56,10 +62,11 @@ export function OpportunitiesView({
         <span className="text-muted-foreground font-mono text-xs tabular-nums">{totalLabel}</span>
       </header>
       <OpportunityFilters />
-      <OpportunityTable properties={properties} onSelect={select} />
+      <OpportunityTable properties={properties} trackedSet={trackedSet} onSelect={select} />
       <OpportunityDetailSheet
         property={selected}
         history={selectedHistory}
+        track={selectedTrack}
         open={selected !== null}
         onClose={() => select(null)}
       />

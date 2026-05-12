@@ -7,6 +7,7 @@ import {
   getPropertyById,
   getPropertyHistory,
 } from '@/lib/data/repositories';
+import { getPropertyTrack, getTracksMap } from '@/lib/data/tracking';
 import type { OpportunityFilters } from '@/lib/data/repositories';
 import type { PropertyType } from '@/lib/data/types';
 import { OpportunitiesView } from './_components/OpportunitiesView';
@@ -61,6 +62,8 @@ export default async function OportunidadesPage({ searchParams }: PageProps) {
   const selected = params.selected ? await getPropertyById(params.selected) : null;
   if (params.selected && !selected) notFound();
   const selectedHistory = selected ? await getPropertyHistory(selected.id) : [];
+  const selectedTrack = selected ? await getPropertyTrack(selected.id) : null;
+  const tracksMap = await getTracksMap(items.map((p) => p.id));
 
   const hero = items[0] ?? null;
   const rest = items.slice(1);
@@ -82,6 +85,8 @@ export default async function OportunidadesPage({ searchParams }: PageProps) {
           properties={hasFilters ? items : rest}
           selected={selected}
           selectedHistory={selectedHistory}
+          selectedTrack={selectedTrack}
+          trackedIds={Array.from(tracksMap.keys())}
           heroLabel={hasFilters ? 'Resultados' : 'Resto del inventario'}
           totalLabel={hasFilters ? `${items.length} resultados` : `${rest.length} inmuebles`}
         />

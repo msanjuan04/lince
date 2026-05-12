@@ -19,12 +19,15 @@ import { StatusDot } from '@/components/shared/StatusDot';
 import { formatEuros, formatM2, formatPricePerM2, formatRelativeDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { PriceHistoryEntry, Property } from '@/lib/data/types';
+import type { PropertyTrack } from '@/lib/data/tracking';
 import { captureProperty } from '../_actions';
 import { PriceHistorySection } from './PriceHistorySection';
+import { TrackingSection } from './TrackingSection';
 
 interface OpportunityDetailSheetProps {
   property: Property | null;
   history: PriceHistoryEntry[];
+  track: PropertyTrack | null;
   open: boolean;
   onClose: () => void;
 }
@@ -32,13 +35,16 @@ interface OpportunityDetailSheetProps {
 export function OpportunityDetailSheet({
   property,
   history,
+  track,
   open,
   onClose,
 }: OpportunityDetailSheetProps) {
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
-        {property ? <Body property={property} history={history} onClose={onClose} /> : null}
+        {property ? (
+          <Body property={property} history={history} track={track} onClose={onClose} />
+        ) : null}
       </SheetContent>
     </Sheet>
   );
@@ -47,10 +53,12 @@ export function OpportunityDetailSheet({
 function Body({
   property,
   history,
+  track,
   onClose,
 }: {
   property: Property;
   history: PriceHistoryEntry[];
+  track: PropertyTrack | null;
   onClose: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -182,6 +190,12 @@ function Body({
               fiable. El análisis comparativo se activa con al menos 3 propiedades en la zona.
             </p>
           )}
+        </Section>
+
+        <Separator />
+
+        <Section title="Mi seguimiento">
+          <TrackingSection propertyId={property.id} track={track} currentPrice={property.price} />
         </Section>
 
         <Separator />

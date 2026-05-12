@@ -67,6 +67,7 @@ model Agency {
   captures Capture[]
   listings Listing[]
   leads    ListingLead[]
+  tracks   PropertyTrack[]
 
   @@map("agencies")
 }
@@ -148,6 +149,7 @@ model Property {
 
   priceHistory       PriceHistory[]
   descriptionHistory DescriptionHistory[]
+  tracks             PropertyTrack[]
 
   @@unique([source, sourceId])
   @@index([postalCode])
@@ -243,6 +245,41 @@ enum ZoneAlertStatus {
   sent
   failed
   skipped
+}
+
+// --------------------------------------------------------------------------
+// CRM personal del inversor — Fase 4: marcar propiedades como tracked,
+// notas privadas, status de gestión, target price (oferta máxima).
+// --------------------------------------------------------------------------
+
+enum PropertyTrackStatus {
+  watching   // marcada para seguimiento, aún no he hecho nada
+  interested // interesado, analizando
+  contacted  // contacté con vendedor/agencia
+  viewed     // visité el inmueble
+  offering   // negociando oferta
+  rejected   // descartada
+  bought     // adquirida
+}
+
+model PropertyTrack {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agencyId       String              @map("agency_id") @db.Uuid
+  propertyId     String              @map("property_id") @db.Uuid
+  status         PropertyTrackStatus @default(watching)
+  notes          String?             @db.Text
+  targetPriceEur Decimal?            @map("target_price_eur") @db.Decimal(12, 2)
+  contactedAt    DateTime?           @map("contacted_at") @db.Timestamptz()
+  viewedAt       DateTime?           @map("viewed_at") @db.Timestamptz()
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
+
+  agency   Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, propertyId])
+  @@index([agencyId, status])
+  @@map("property_tracks")
 }
 
 model ZoneAlert {
