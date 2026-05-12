@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, X } from 'lucide-react';
+import { Download, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
@@ -248,6 +248,23 @@ export function OpportunityFilters() {
             Limpiar
           </Button>
         ) : null}
+
+        <Button
+          render={
+            <a
+              href={`/api/export/oportunidades?${searchParams.toString()}`}
+              download
+              rel="noopener"
+            />
+          }
+          nativeButton={false}
+          variant="outline"
+          size="sm"
+          title="Exportar a CSV"
+        >
+          <Download className="size-3.5" />
+          Exportar
+        </Button>
       </div>
     </div>
   );
