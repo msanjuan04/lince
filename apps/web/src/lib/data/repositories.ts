@@ -19,9 +19,13 @@ import { zonesMock } from './mocks/zones';
 import { capturesMock } from './mocks/captures';
 import { listingsMock, listingLeadsMock } from './mocks/listings';
 import {
+  fetchBucketDistribution,
   fetchOpportunities,
+  fetchOpportunitiesForMap,
   fetchOpportunityStats,
   fetchPropertyById,
+  fetchSourceDistribution,
+  fetchTopOpportunities,
   type DbOpportunityFilters,
 } from './db';
 
@@ -92,6 +96,56 @@ export async function getPropertyById(id: string): Promise<Property | null> {
     return fetchPropertyById(id);
   }
   return propertiesMock.find((p) => p.id === id) ?? null;
+}
+
+export async function getTopOpportunities(limit = 5): Promise<Property[]> {
+  if (await hasRealData()) {
+    return fetchTopOpportunities(limit);
+  }
+  return [...propertiesMock]
+    .sort((a, b) => b.opportunityScore - a.opportunityScore)
+    .slice(0, limit);
+}
+
+export async function getOpportunitiesForMap(): Promise<Property[]> {
+  if (await hasRealData()) {
+    return fetchOpportunitiesForMap();
+  }
+  return propertiesMock;
+}
+
+export async function getSourceDistribution(): Promise<Array<{ source: string; count: number }>> {
+  if (await hasRealData()) {
+    return fetchSourceDistribution();
+  }
+  const byKey = new Map<string, number>();
+  for (const p of propertiesMock) byKey.set(p.source, (byKey.get(p.source) ?? 0) + 1);
+  return Array.from(byKey.entries())
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export async function getBucketDistribution(): Promise<{
+  auctions: number;
+  bankOwned: number;
+  needsReform: number;
+  withTerrace: number;
+  withRedFlags: number;
+  highScore: number;
+}> {
+  if (await hasRealData()) {
+    return fetchBucketDistribution();
+  }
+  return {
+    auctions: propertiesMock.filter((p) => p.source === 'boe').length,
+    bankOwned: propertiesMock.filter((p) =>
+      ['sareb', 'aliseda', 'solvia', 'haya', 'casaktua', 'anida'].includes(p.source),
+    ).length,
+    needsReform: 0,
+    withTerrace: 0,
+    withRedFlags: 0,
+    highScore: propertiesMock.filter((p) => p.opportunityScore >= 60).length,
+  };
 }
 
 export async function getOpportunityStats(): Promise<{

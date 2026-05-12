@@ -1,6 +1,15 @@
 'use client';
 
-import { Handshake, Map, Settings, Tag, Telescope, ScanSearch } from 'lucide-react';
+import {
+  Handshake,
+  LayoutDashboard,
+  Map,
+  MapPin,
+  Settings,
+  Tag,
+  Telescope,
+  ScanSearch,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -18,7 +27,9 @@ import type { Agency, User } from '@/lib/data/types';
 import { UserMenu } from './UserMenu';
 
 const NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/oportunidades', label: 'Oportunidades', icon: ScanSearch },
+  { href: '/oportunidades/mapa', label: 'Mapa', icon: MapPin },
   { href: '/captures', label: 'Captures', icon: Handshake },
   { href: '/listings', label: 'Listings', icon: Tag },
   { href: '/zonas', label: 'Zonas', icon: Map },
@@ -44,7 +55,7 @@ export function AppSidebar({ agency, user }: AppSidebarProps) {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-sidebar-border h-16 justify-center border-b px-4">
         <Link
-          href="/oportunidades"
+          href="/dashboard"
           className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
         >
           <div className="bg-foreground text-background flex h-7 w-7 shrink-0 items-center justify-center">
@@ -61,7 +72,11 @@ export function AppSidebar({ agency, user }: AppSidebarProps) {
           <SidebarGroupContent>
             <SidebarMenu className="gap-1">
               {NAV_ITEMS.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                // Para 'Oportunidades' (sin /mapa), no activar cuando estamos en /oportunidades/mapa
+                const active =
+                  item.href === '/oportunidades'
+                    ? pathname === '/oportunidades'
+                    : pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const Icon = item.icon;
                 return (
                   <SidebarMenuItem key={item.href}>

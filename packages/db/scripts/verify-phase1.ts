@@ -2,7 +2,7 @@
 // de campos críticos (precio rellenado, CP rellenado, condition detectado,
 // banderas rojas) y muestra de filas.
 
-import { prisma, Prisma } from '../src/index.js';
+import { prisma, Prisma } from '../src/index';
 
 async function main(): Promise<void> {
   console.log('\n========== VERIFICACIÓN FASE 1 ==========\n');

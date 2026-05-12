@@ -252,6 +252,52 @@ export async function fetchPropertyById(id: string): Promise<Property | null> {
   return row ? adapt(row, zoneAvgByCp) : null;
 }
 
+/** Top N oportunidades para el dashboard home. */
+export async function fetchTopOpportunities(limit = 5): Promise<Property[]> {
+  const all = await fetchOpportunities();
+  return all.slice(0, limit);
+}
+
+/** Distribución de propiedades por fuente. */
+export async function fetchSourceDistribution(): Promise<Array<{ source: string; count: number }>> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ source: string; n: bigint }>>(
+    `SELECT source, COUNT(*)::bigint AS n FROM properties GROUP BY source ORDER BY n DESC`,
+  );
+  return rows.map((r) => ({ source: r.source, count: Number(r.n) }));
+}
+
+/** Distribución por bucket de oportunidad (para el dashboard home). */
+export async function fetchBucketDistribution(): Promise<{
+  auctions: number;
+  bankOwned: number;
+  needsReform: number;
+  withTerrace: number;
+  withRedFlags: number;
+  highScore: number;
+}> {
+  const [auctions, bankOwned, needsReform, withTerrace] = await Promise.all([
+    prisma.property.count({ where: { isAuction: true } }),
+    prisma.property.count({ where: { isBankOwned: true } }),
+    prisma.property.count({ where: { condition: 'needs_reform' } }),
+    prisma.property.count({ where: { hasTerrace: true } }),
+  ]);
+  const redFlagsRows = await prisma.$queryRawUnsafe<Array<{ n: bigint }>>(
+    `SELECT COUNT(*)::bigint AS n FROM properties WHERE array_length(red_flags, 1) > 0`,
+  );
+  const withRedFlags = Number(redFlagsRows[0]?.n ?? 0n);
+
+  // High-score: score >= 60 (heurística)
+  const all = await fetchOpportunities();
+  const highScore = all.filter((p) => p.opportunityScore >= 60).length;
+
+  return { auctions, bankOwned, needsReform, withTerrace, withRedFlags, highScore };
+}
+
+/** Propiedades con coordenadas (real o fallback CP) para el mapa. */
+export async function fetchOpportunitiesForMap(): Promise<Property[]> {
+  return fetchOpportunities();
+}
+
 export async function fetchOpportunityStats(): Promise<{
   total: number;
   newToday: number;

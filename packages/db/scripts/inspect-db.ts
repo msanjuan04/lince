@@ -1,7 +1,7 @@
 // Script de inspección puntual: lista tablas en public y conteo de filas.
 // Uso: cd packages/db && set -a && . ../../.env.local && set +a && pnpm exec tsx scripts/inspect-db.ts
 
-import { prisma } from '../src/index.js';
+import { prisma } from '../src/index';
 
 type Row = { table_name: string };
 

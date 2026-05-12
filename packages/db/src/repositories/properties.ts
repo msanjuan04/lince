@@ -1,7 +1,7 @@
 // Upsert idempotente por (source, source_id). Devuelve la fila y un flag
 // `isNew` para que el orquestador del crawler pueda contar nuevas vs actualizadas.
 
-import { Prisma, prisma } from '../index.js';
+import { Prisma, prisma } from '../index';
 
 export type PropertyUpsertInput = {
   source: string;

@@ -12,9 +12,9 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 export * from '@prisma/client';
 
-export * as propertiesRepo from './repositories/properties.js';
-export * as crawlerRunsRepo from './repositories/crawler-runs.js';
+export * as propertiesRepo from './repositories/properties';
+export * as crawlerRunsRepo from './repositories/crawler-runs';
 
 // Re-exports de tipos para uso top-level desde consumidores.
-export type { PropertyUpsertInput, UpsertResult } from './repositories/properties.js';
-export type { ErrorRecord, FinishRunInput } from './repositories/crawler-runs.js';
+export type { PropertyUpsertInput, UpsertResult } from './repositories/properties';
+export type { ErrorRecord, FinishRunInput } from './repositories/crawler-runs';

@@ -2,8 +2,8 @@
 // Usa fetch nativo de Node 22. Devuelve `Response` para que el caller decida
 // si quiere texto, json, o stream.
 
-import { LINCE_USER_AGENT } from './user-agent.js';
-import { RateLimiter, backoffMs, sleep } from './rate-limit.js';
+import { LINCE_USER_AGENT } from './user-agent';
+import { RateLimiter, backoffMs, sleep } from './rate-limit';
 
 export type FetchOptions = {
   /** Headers extra (Accept, Referer, etc.). */

@@ -1,7 +1,7 @@
 // Auditoría de runs del crawler. Cada invocación del orquestador crea una fila
 // y va acumulando contadores y errores hasta finish.
 
-import { Prisma, prisma } from '../index.js';
+import { Prisma, prisma } from '../index';
 
 export type ErrorRecord = {
   url?: string;
