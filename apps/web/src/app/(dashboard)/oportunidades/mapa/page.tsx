@@ -1,25 +1,11 @@
 import type { Metadata } from 'next';
-import dynamic from 'next/dynamic';
 import { Topbar } from '@/components/nav/Topbar';
 import { getOpportunitiesForMap } from '@/lib/data/repositories';
+import { MapClientWrapper } from './_components/MapClientWrapper';
 
 export const metadata: Metadata = {
   title: 'Mapa de oportunidades',
 };
-
-// Leaflet usa `window`. Lo cargamos solo en cliente.
-const OpportunitiesMap = dynamic(
-  () => import('./_components/OpportunitiesMap').then((m) => m.OpportunitiesMap),
-  { ssr: false, loading: () => <MapSkeleton /> },
-);
-
-function MapSkeleton() {
-  return (
-    <div className="border-border bg-muted/30 flex h-[calc(100vh-12rem)] min-h-[500px] w-full items-center justify-center border">
-      <span className="text-muted-foreground text-sm">Cargando mapa…</span>
-    </div>
-  );
-}
 
 export default async function MapaPage() {
   const properties = await getOpportunitiesForMap();
@@ -48,7 +34,7 @@ export default async function MapaPage() {
           </span>
         </div>
 
-        <OpportunitiesMap properties={properties} />
+        <MapClientWrapper properties={properties} />
       </div>
     </>
   );
