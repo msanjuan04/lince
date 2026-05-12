@@ -11,7 +11,8 @@
     "start": "tsx src/index.ts",
     "trigger-now": "tsx src/trigger.ts",
     "enrich-catastro": "tsx src/enrich-catastro.ts",
-    "evaluate-zones": "tsx src/evaluate-zones.ts"
+    "evaluate-zones": "tsx src/evaluate-zones.ts",
+    "test-whatsapp": "tsx src/test-whatsapp.ts"
   },
   "dependencies": {
     "@lince/crawler-portales": "workspace:*",
