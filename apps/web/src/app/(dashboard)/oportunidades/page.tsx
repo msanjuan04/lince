@@ -1,7 +1,12 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Topbar } from '@/components/nav/Topbar';
-import { getOpportunities, getOpportunityStats, getPropertyById } from '@/lib/data/repositories';
+import {
+  getOpportunities,
+  getOpportunityStats,
+  getPropertyById,
+  getPropertyHistory,
+} from '@/lib/data/repositories';
 import type { OpportunityFilters } from '@/lib/data/repositories';
 import type { PropertyType } from '@/lib/data/types';
 import { OpportunitiesView } from './_components/OpportunitiesView';
@@ -55,6 +60,7 @@ export default async function OportunidadesPage({ searchParams }: PageProps) {
 
   const selected = params.selected ? await getPropertyById(params.selected) : null;
   if (params.selected && !selected) notFound();
+  const selectedHistory = selected ? await getPropertyHistory(selected.id) : [];
 
   const hero = items[0] ?? null;
   const rest = items.slice(1);
@@ -75,6 +81,7 @@ export default async function OportunidadesPage({ searchParams }: PageProps) {
         <OpportunitiesView
           properties={hasFilters ? items : rest}
           selected={selected}
+          selectedHistory={selectedHistory}
           heroLabel={hasFilters ? 'Resultados' : 'Resto del inventario'}
           totalLabel={hasFilters ? `${items.length} resultados` : `${rest.length} inmuebles`}
         />

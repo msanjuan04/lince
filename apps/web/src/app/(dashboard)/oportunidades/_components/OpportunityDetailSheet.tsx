@@ -18,26 +18,41 @@ import { propertyTypeLabel } from '@/components/shared/PropertyTypeLabel';
 import { StatusDot } from '@/components/shared/StatusDot';
 import { formatEuros, formatM2, formatPricePerM2, formatRelativeDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { Property } from '@/lib/data/types';
+import type { PriceHistoryEntry, Property } from '@/lib/data/types';
 import { captureProperty } from '../_actions';
+import { PriceHistorySection } from './PriceHistorySection';
 
 interface OpportunityDetailSheetProps {
   property: Property | null;
+  history: PriceHistoryEntry[];
   open: boolean;
   onClose: () => void;
 }
 
-export function OpportunityDetailSheet({ property, open, onClose }: OpportunityDetailSheetProps) {
+export function OpportunityDetailSheet({
+  property,
+  history,
+  open,
+  onClose,
+}: OpportunityDetailSheetProps) {
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
-        {property ? <Body property={property} onClose={onClose} /> : null}
+        {property ? <Body property={property} history={history} onClose={onClose} /> : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-function Body({ property, onClose }: { property: Property; onClose: () => void }) {
+function Body({
+  property,
+  history,
+  onClose,
+}: {
+  property: Property;
+  history: PriceHistoryEntry[];
+  onClose: () => void;
+}) {
   const [pending, startTransition] = useTransition();
   const discountPct =
     (property.zoneAvgPricePerM2 - property.pricePerM2) / property.zoneAvgPricePerM2;
@@ -121,6 +136,12 @@ function Body({ property, onClose }: { property: Property; onClose: () => void }
               </span>
             </div>
           </div>
+        </Section>
+
+        <Separator />
+
+        <Section title="Histórico de precio">
+          <PriceHistorySection history={history} />
         </Section>
 
         <Separator />

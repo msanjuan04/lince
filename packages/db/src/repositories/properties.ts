@@ -99,6 +99,18 @@ export async function upsertProperty(input: PropertyUpsertInput): Promise<Upsert
         firstSeen: now,
       },
     });
+    // Primera observación de precio: punto cero del histórico.
+    if (input.price !== undefined && input.price !== null) {
+      await prisma.priceHistory.create({
+        data: {
+          propertyId: created.id,
+          oldPrice: null,
+          newPrice: toDecimal(input.price)!,
+          deltaPct: null,
+          observedAt: now,
+        },
+      });
+    }
     return {
       id: created.id,
       isNew: true,
@@ -122,6 +134,34 @@ export async function upsertProperty(input: PropertyUpsertInput): Promise<Upsert
     !!existing.descriptionHash &&
     !!input.descriptionHash &&
     existing.descriptionHash !== input.descriptionHash;
+
+  // Persistir el diff en histórico cuando aplique. Los inserts son ligeros y
+  // permiten reconstruir la línea de tiempo completa de la propiedad.
+  if (priceChanged && newPrice !== null && prevPrice !== null) {
+    const deltaPct = (newPrice - prevPrice) / prevPrice;
+    await prisma.priceHistory.create({
+      data: {
+        propertyId: existing.id,
+        oldPrice: toDecimal(prevPrice),
+        newPrice: toDecimal(newPrice)!,
+        deltaPct: toDecimal(Math.round(deltaPct * 10000) / 100), // %, 2 decimales
+        observedAt: now,
+      },
+    });
+  }
+
+  if (descriptionChanged && input.descriptionHash) {
+    const snippet = input.description ? input.description.slice(0, 500) : null;
+    await prisma.descriptionHistory.create({
+      data: {
+        propertyId: existing.id,
+        oldHash: existing.descriptionHash,
+        newHash: input.descriptionHash,
+        snippet,
+        observedAt: now,
+      },
+    });
+  }
 
   return {
     id: updated.id,

@@ -9,6 +9,7 @@ import type {
   CaptureStatus,
   Listing,
   ListingLead,
+  PriceHistoryEntry,
   Property,
   PropertyType,
   Zone,
@@ -24,6 +25,7 @@ import {
   fetchOpportunitiesForMap,
   fetchOpportunityStats,
   fetchPropertyById,
+  fetchPropertyHistory,
   fetchSourceDistribution,
   fetchTopOpportunities,
   type DbOpportunityFilters,
@@ -96,6 +98,13 @@ export async function getPropertyById(id: string): Promise<Property | null> {
     return fetchPropertyById(id);
   }
   return propertiesMock.find((p) => p.id === id) ?? null;
+}
+
+export async function getPropertyHistory(id: string): Promise<PriceHistoryEntry[]> {
+  if (await hasRealData()) {
+    return fetchPropertyHistory(id);
+  }
+  return [];
 }
 
 export async function getTopOpportunities(limit = 5): Promise<Property[]> {

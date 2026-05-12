@@ -146,6 +146,9 @@ model Property {
 
   captures Capture[]
 
+  priceHistory       PriceHistory[]
+  descriptionHistory DescriptionHistory[]
+
   @@unique([source, sourceId])
   @@index([postalCode])
   @@index([opportunityScore(sort: Desc)])
@@ -153,6 +156,49 @@ model Property {
   @@index([isAuction])
   @@index([isBankOwned])
   @@map("properties")
+}
+
+// --------------------------------------------------------------------------
+// Histórico — Fase 2: detección de rebajas (Bucket A — vendedor desesperado)
+// --------------------------------------------------------------------------
+
+/**
+ * Cada cambio de precio detectado entre runs queda registrado aquí. Permite
+ * calcular: número de rebajas en N semanas, magnitud acumulada, tiempo desde
+ * última rebaja. Input principal del Bucket A (vendedor desesperado).
+ */
+model PriceHistory {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  propertyId   String   @map("property_id") @db.Uuid
+  oldPrice     Decimal? @map("old_price") @db.Decimal(12, 2)
+  newPrice     Decimal  @map("new_price") @db.Decimal(12, 2)
+  deltaPct     Decimal? @map("delta_pct") @db.Decimal(6, 2)
+  observedAt   DateTime @default(now()) @map("observed_at") @db.Timestamptz()
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, observedAt(sort: Desc)])
+  @@index([observedAt])
+  @@map("price_history")
+}
+
+/**
+ * Cambios de descripción entre runs. Útil para detectar "señales de urgencia"
+ * que aparecen tarde en el anuncio (ej. "se escuchan ofertas", "por traslado").
+ * No guardamos el texto completo cada vez — solo hash + un snippet corto.
+ */
+model DescriptionHistory {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  propertyId      String   @map("property_id") @db.Uuid
+  oldHash         String?  @map("old_hash")
+  newHash         String   @map("new_hash")
+  snippet         String?  @db.Text
+  observedAt      DateTime @default(now()) @map("observed_at") @db.Timestamptz()
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, observedAt(sort: Desc)])
+  @@map("description_history")
 }
 
 // --------------------------------------------------------------------------

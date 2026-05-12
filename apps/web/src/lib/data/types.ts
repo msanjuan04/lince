@@ -52,6 +52,13 @@ export interface AgencyMember {
   user: User;
 }
 
+export interface PriceHistoryEntry {
+  observedAt: Date;
+  oldPrice: number | null;
+  newPrice: number;
+  deltaPct: number | null;
+}
+
 export interface Property {
   id: string;
   source: PropertySource;

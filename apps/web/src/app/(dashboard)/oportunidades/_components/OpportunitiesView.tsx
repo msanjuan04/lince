@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useTransition } from 'react';
-import type { Property } from '@/lib/data/types';
+import type { PriceHistoryEntry, Property } from '@/lib/data/types';
 import { OpportunityFilters } from './OpportunityFilters';
 import { OpportunityTable } from './OpportunityTable';
 import { OpportunityDetailSheet } from './OpportunityDetailSheet';
@@ -10,6 +10,7 @@ import { OpportunityDetailSheet } from './OpportunityDetailSheet';
 interface OpportunitiesViewProps {
   properties: Property[];
   selected: Property | null;
+  selectedHistory: PriceHistoryEntry[];
   heroLabel: string;
   totalLabel: string;
 }
@@ -17,6 +18,7 @@ interface OpportunitiesViewProps {
 export function OpportunitiesView({
   properties,
   selected,
+  selectedHistory,
   heroLabel,
   totalLabel,
 }: OpportunitiesViewProps) {
@@ -57,6 +59,7 @@ export function OpportunitiesView({
       <OpportunityTable properties={properties} onSelect={select} />
       <OpportunityDetailSheet
         property={selected}
+        history={selectedHistory}
         open={selected !== null}
         onClose={() => select(null)}
       />

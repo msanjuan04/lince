@@ -6,7 +6,7 @@
 // los huecos del scraping (address, m², lat/lng, etc.).
 
 import { prisma, Prisma, type Property as PrismaProperty } from '@lince/db';
-import type { Property, PropertySource, PropertyType } from './types';
+import type { PriceHistoryEntry, Property, PropertySource, PropertyType } from './types';
 
 const VALID_SOURCES: PropertySource[] = [
   'idealista',
@@ -250,6 +250,20 @@ export async function fetchPropertyById(id: string): Promise<Property | null> {
   const zoneAvgByCp = await getZoneAvgByCp();
   const row = await prisma.property.findUnique({ where: { id } });
   return row ? adapt(row, zoneAvgByCp) : null;
+}
+
+/** Histórico de cambios de precio de una propiedad, en orden cronológico. */
+export async function fetchPropertyHistory(propertyId: string): Promise<PriceHistoryEntry[]> {
+  const rows = await prisma.priceHistory.findMany({
+    where: { propertyId },
+    orderBy: { observedAt: 'asc' },
+  });
+  return rows.map((r) => ({
+    observedAt: r.observedAt,
+    oldPrice: r.oldPrice ? Number(r.oldPrice) : null,
+    newPrice: Number(r.newPrice),
+    deltaPct: r.deltaPct ? Number(r.deltaPct) : null,
+  }));
 }
 
 /** Top N oportunidades para el dashboard home. */
