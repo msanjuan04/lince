@@ -14,7 +14,11 @@ export * from '@prisma/client';
 
 export * as propertiesRepo from './repositories/properties';
 export * as crawlerRunsRepo from './repositories/crawler-runs';
+export * as zonesRepo from './repositories/zones';
+export * as zoneAlertsRepo from './repositories/zone-alerts';
 
 // Re-exports de tipos para uso top-level desde consumidores.
 export type { PropertyUpsertInput, UpsertResult } from './repositories/properties';
 export type { ErrorRecord, FinishRunInput } from './repositories/crawler-runs';
+export type { ZoneInput } from './repositories/zones';
+export type { CreateZoneAlertInput } from './repositories/zone-alerts';

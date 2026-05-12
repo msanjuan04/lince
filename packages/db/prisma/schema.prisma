@@ -213,12 +213,57 @@ model Zone {
   postalCodes   String[] @map("postal_codes")
   filters       Json?    @db.JsonB
   alertChannels String[] @map("alert_channels")
+  // Destinatario para notificaciones de matches en esta zona.
+  alertPhoneE164 String? @map("alert_phone_e164")
+  alertEmail    String?  @map("alert_email")
   active        Boolean  @default(true)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  agency Agency       @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  alerts ZoneAlert[]
 
+  @@index([agencyId, active])
   @@map("zones")
+}
+
+// --------------------------------------------------------------------------
+// Alertas Fase 3: el sistema evalúa zonas tras cada crawl y registra una
+// fila por cada trigger (propiedad nueva, rebaja relevante, score alto).
+// La fila contiene el estado de envío para auditoría y reintentos.
+// --------------------------------------------------------------------------
+
+enum ZoneAlertTrigger {
+  new_property      @map("new_property")
+  price_drop        @map("price_drop")
+  high_score        @map("high_score")
+}
+
+enum ZoneAlertStatus {
+  pending
+  sent
+  failed
+  skipped
+}
+
+model ZoneAlert {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  zoneId      String           @map("zone_id") @db.Uuid
+  propertyId  String           @map("property_id") @db.Uuid
+  trigger     ZoneAlertTrigger
+  channel     String           // 'whatsapp' | 'email' (extensible)
+  status      ZoneAlertStatus  @default(pending)
+  payload     Json?            @db.JsonB
+  error       String?
+  sentAt      DateTime?        @map("sent_at") @db.Timestamptz()
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+
+  zone Zone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  // Dedup: una alerta por (zona, propiedad, trigger). Evita reenviar la misma
+  // notificación si el crawler vuelve a observar la propiedad sin cambios.
+  @@unique([zoneId, propertyId, trigger])
+  @@index([status, createdAt])
+  @@map("zone_alerts")
 }
 
 model Capture {

@@ -93,6 +93,9 @@ importers:
       '@lince/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@lince/notifier':
+        specifier: workspace:*
+        version: link:../../packages/notifier
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -208,6 +211,15 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
+  packages/notifier:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.18
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/shared:
     devDependencies:
       typescript:
@@ -253,6 +265,9 @@ importers:
       '@lince/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@lince/notifier':
+        specifier: workspace:*
+        version: link:../../packages/notifier
       fast-xml-parser:
         specifier: ^4.5.0
         version: 4.5.6

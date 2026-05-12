@@ -5,8 +5,14 @@
 import type { Agency, AgencyMember, User } from '../types';
 import { daysAgo } from './_helpers';
 
+// UUIDs fijos para la agency/usuario demo (mientras no hay Auth.js).
+// Las server actions persisten zonas/captures con este agencyId — debe ser
+// un UUID válido para que Postgres no lance "invalid character" al insert.
+export const DEMO_AGENCY_ID = '00000000-0000-0000-0000-000000000001';
+export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000002';
+
 export const currentAgency: Agency = {
-  id: 'agency-dev',
+  id: DEMO_AGENCY_ID,
   name: 'Lince (desarrollo)',
   plan: 'founder',
   active: true,
@@ -14,7 +20,7 @@ export const currentAgency: Agency = {
 };
 
 export const currentUser: User = {
-  id: 'user-marc',
+  id: DEMO_USER_ID,
   email: 'marc@gnerai.com',
   name: 'Marc Sanjuan',
   createdAt: daysAgo(3),

@@ -14,8 +14,8 @@ import type {
   PropertyType,
   Zone,
 } from './types';
+import { zonesRepo, prisma } from '@lince/db';
 import { currentAgency, currentUser, agencyMembersMock } from './mocks/agency';
-import { zonesMock } from './mocks/zones';
 import { capturesMock } from './mocks/captures';
 import { listingsMock, listingLeadsMock } from './mocks/listings';
 import {
@@ -165,11 +165,55 @@ export async function getOpportunityStats(): Promise<{
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getZones(): Promise<Zone[]> {
-  return zonesMock;
+  try {
+    const rows = await zonesRepo.listZonesForAgency(currentAgency.id);
+    // Para cada zona, calcular matchingCount y newToday con queries individuales.
+    // Cap: si hay >50 zonas habría que optimizar.
+    const enriched = await Promise.all(
+      rows.map(async (z) => {
+        const matchingIds = await zonesRepo.findMatchingPropertyIds(z.id);
+        const filters = (z.filters ?? {}) as {
+          minScore?: number | null;
+          maxPrice?: number | null;
+          types?: string[] | null;
+          minRooms?: number | null;
+        };
+        const oneDayAgo = new Date(Date.now() - 86_400_000);
+        let newToday = 0;
+        if (matchingIds.length > 0) {
+          newToday = await prisma.property.count({
+            where: { id: { in: matchingIds }, firstSeen: { gte: oneDayAgo } },
+          });
+        }
+        return {
+          id: z.id,
+          agencyId: z.agencyId,
+          name: z.name ?? 'Zona sin nombre',
+          postalCodes: z.postalCodes,
+          filters: {
+            minScore: filters.minScore ?? 0,
+            maxPrice: filters.maxPrice ?? null,
+            types: (filters.types ?? []) as Zone['filters']['types'],
+            minRooms: filters.minRooms ?? null,
+          },
+          alertChannels: z.alertChannels as Zone['alertChannels'],
+          active: z.active,
+          createdAt: z.createdAt,
+          matchingCount: matchingIds.length,
+          newToday,
+        } satisfies Zone;
+      }),
+    );
+    return enriched;
+  } catch (err) {
+    console.error('[repositories] getZones falló:', err);
+    return [];
+  }
 }
 
 export async function getZoneById(id: string): Promise<Zone | null> {
-  return zonesMock.find((z) => z.id === id) ?? null;
+  const all = await getZones();
+  return all.find((z) => z.id === id) ?? null;
 }
 
 export async function getCaptures(): Promise<Capture[]> {

@@ -18,6 +18,7 @@ import {
   type OrchestratorResult,
 } from '@lince/crawler-portales';
 import { runEnrichCatastro, type EnrichCatastroResult } from './enrich-catastro';
+import { runEvaluateZones, type EvaluateZonesResult } from './evaluate-zones';
 
 export interface WeeklySnapshotOptions {
   /** Fuentes a ejecutar (orden importa). Por defecto: pisos, boe, solvia. */
@@ -28,6 +29,8 @@ export interface WeeklySnapshotOptions {
   postalCodes?: string[];
   /** Si true, después del crawl ejecuta el enricher Catastro. Default true. */
   enrichCatastro?: boolean;
+  /** Si true, evalúa zonas y dispara alertas. Default true. */
+  evaluateZones?: boolean;
 }
 
 export interface WeeklySnapshotResult {
@@ -36,6 +39,7 @@ export interface WeeklySnapshotResult {
   durationMs: number;
   runs: OrchestratorResult[];
   enrichCatastro?: EnrichCatastroResult;
+  evaluateZones?: EvaluateZonesResult;
   totals: {
     propertiesFound: number;
     propertiesNew: number;
@@ -93,6 +97,17 @@ export async function runWeeklySnapshot(
     }
   }
 
+  // Evaluar zonas → crear alertas + enviar WhatsApp si aplica.
+  let evaluateZones: EvaluateZonesResult | undefined;
+  if (opts.evaluateZones !== false) {
+    try {
+      console.log('\n[weekly-snapshot] arrancando evaluator de zonas...');
+      evaluateZones = await runEvaluateZones();
+    } catch (err) {
+      console.error('[weekly-snapshot] evaluate-zones FATAL:', err);
+    }
+  }
+
   const endedAt = new Date();
   const durationMs = endedAt.getTime() - startedAt.getTime();
 
@@ -115,7 +130,12 @@ export async function runWeeklySnapshot(
   if (enrichCatastro) {
     console.log(`  Geocoded (Catastro): ${enrichCatastro.enriched}/${enrichCatastro.attempted}`);
   }
+  if (evaluateZones) {
+    console.log(
+      `  Zone alerts: ${evaluateZones.alertsCreated} created · ${evaluateZones.alertsSent} sent · ${evaluateZones.alertsSkipped} skipped · ${evaluateZones.alertsFailed} failed`,
+    );
+  }
   console.log('');
 
-  return { startedAt, endedAt, durationMs, runs, enrichCatastro, totals };
+  return { startedAt, endedAt, durationMs, runs, enrichCatastro, evaluateZones, totals };
 }

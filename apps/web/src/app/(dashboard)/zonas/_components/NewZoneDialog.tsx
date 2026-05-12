@@ -158,12 +158,28 @@ export function NewZoneButton() {
                   <Checkbox
                     name="alertChannels"
                     value={opt.value}
-                    defaultChecked={opt.value === 'email'}
+                    defaultChecked={opt.value === 'whatsapp'}
                   />
                   {opt.label}
                 </label>
               ))}
             </div>
+          </Field>
+
+          <Field
+            label="Teléfono WhatsApp"
+            name="alertPhone"
+            hint="Necesario si quieres alertas por WhatsApp. Formato ES: 666 12 34 56 o +34 666 123 456"
+            error={errors.alertPhone?.[0]}
+          >
+            <Input
+              id="alertPhone"
+              name="alertPhone"
+              type="tel"
+              autoComplete="tel"
+              placeholder="+34 666 123 456"
+              className="tabular-nums"
+            />
           </Field>
 
           <DialogFooter>
