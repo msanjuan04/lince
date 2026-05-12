@@ -17,6 +17,7 @@ import {
   type CrawlerSource,
   type OrchestratorResult,
 } from '@lince/crawler-portales';
+import { runEnrichCatastro, type EnrichCatastroResult } from './enrich-catastro';
 
 export interface WeeklySnapshotOptions {
   /** Fuentes a ejecutar (orden importa). Por defecto: pisos, boe, solvia. */
@@ -25,6 +26,8 @@ export interface WeeklySnapshotOptions {
   maxPerSource?: number;
   /** CPs a filtrar (aplica a todas las fuentes que soporten filtro). */
   postalCodes?: string[];
+  /** Si true, después del crawl ejecuta el enricher Catastro. Default true. */
+  enrichCatastro?: boolean;
 }
 
 export interface WeeklySnapshotResult {
@@ -32,6 +35,7 @@ export interface WeeklySnapshotResult {
   endedAt: Date;
   durationMs: number;
   runs: OrchestratorResult[];
+  enrichCatastro?: EnrichCatastroResult;
   totals: {
     propertiesFound: number;
     propertiesNew: number;
@@ -78,6 +82,17 @@ export async function runWeeklySnapshot(
     }
   }
 
+  // Enriquecer con Catastro (lat/lng oficiales para propiedades con ref catastral).
+  let enrichCatastro: EnrichCatastroResult | undefined;
+  if (opts.enrichCatastro !== false) {
+    try {
+      console.log('\n[weekly-snapshot] arrancando enricher Catastro...');
+      enrichCatastro = await runEnrichCatastro({ maxItems: 5000 });
+    } catch (err) {
+      console.error('[weekly-snapshot] enrich-catastro FATAL:', err);
+    }
+  }
+
   const endedAt = new Date();
   const durationMs = endedAt.getTime() - startedAt.getTime();
 
@@ -96,7 +111,11 @@ export async function runWeeklySnapshot(
   console.log(`  Found:   ${totals.propertiesFound}`);
   console.log(`  New:     ${totals.propertiesNew}`);
   console.log(`  Updated: ${totals.propertiesUpdated}`);
-  console.log(`  Errores: ${totals.errors}\n`);
+  console.log(`  Errores: ${totals.errors}`);
+  if (enrichCatastro) {
+    console.log(`  Geocoded (Catastro): ${enrichCatastro.enriched}/${enrichCatastro.attempted}`);
+  }
+  console.log('');
 
-  return { startedAt, endedAt, durationMs, runs, totals };
+  return { startedAt, endedAt, durationMs, runs, enrichCatastro, totals };
 }
