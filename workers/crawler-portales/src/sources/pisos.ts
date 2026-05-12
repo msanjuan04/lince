@@ -163,13 +163,22 @@ function parseDetail(url: string, href: string, html: string): PropertyUpsertInp
     if (cpInText && cpInText[1]) postalCode = cpInText[1];
   }
 
+  // Derivar ciudad desde el slug del breadcrumb cuando es posible
+  const cityFromSlug = href.match(/^\/comprar\/[a-z]+-([a-z_]+)(?:0\d{4})/i)?.[1];
+  const city = cityFromSlug
+    ? cityFromSlug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    : 'Barcelona';
+
+  // Filtro estricto: descartar propiedades fuera de Catalunya (CP no empieza por 08, 17, 25 o 43)
+  if (postalCode && !/^(08|17|25|43)/.test(postalCode)) return null;
+
   return {
     source: 'pisos',
     sourceId,
     sourceUrl: ogUrl,
     type,
     address,
-    city: postalCode ? null : 'Barcelona', // fallback razonable: estamos en listado BCN
+    city,
     postalCode,
     province: provinceFromPostalCode(postalCode) ?? 'Barcelona',
     m2,

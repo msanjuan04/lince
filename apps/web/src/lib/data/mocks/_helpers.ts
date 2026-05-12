@@ -36,6 +36,7 @@ const SOURCE_URL_PREFIX: Record<PropertySource, string> = {
   idealista: 'https://www.idealista.com/inmueble',
   fotocasa: 'https://www.fotocasa.es/es/comprar/vivienda',
   habitaclia: 'https://www.habitaclia.com/comprar-vivienda',
+  pisos: 'https://www.pisos.com/comprar',
   boe: 'https://subastas.boe.es/detalleSubasta.php?idSub',
   sareb: 'https://www.servihabitat.com/inmueble',
   aliseda: 'https://www.aliseda.es/propiedad',

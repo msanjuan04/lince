@@ -1,23 +1,15 @@
-// Solvia — bank-owned servicer. SSR Angular: el HTML servido trae las URLs
-// individuales sin necesidad de Playwright. Parseo de detalle con Cheerio.
+// Solvia — bank-owned servicer. Angular SSR con `<script id="ng-state">` que
+// contiene el state completo de la página, incluido `propertyBasicDetail` con
+// precio, m², CP, dirección, características y alquiler estimado. Sin Playwright.
 
 import { load } from 'cheerio';
 import {
   fetchText,
   RateLimiter,
   cleanWhitespace,
-  detectCondition,
-  detectElevator,
-  detectOrientation,
   detectRedFlags,
-  detectTerrace,
   hashDescription,
-  parseFloor,
   parsePriceEur,
-  parseRooms,
-  parseBathrooms,
-  parseSquareMeters,
-  parseYear,
   pricePerM2,
   provinceFromPostalCode,
 } from '@lince/crawlers-core';
@@ -35,8 +27,8 @@ const MUNICIPALITY_URL_RE =
 const DETAIL_URL_RE = /^https?:\/\/www\.solvia\.es\/es\/propiedades\/comprar\/[a-z0-9-]+/;
 const DETAIL_ID_RE = /-(\d+)-(\d+)(?:\/?)?$/;
 const SITEMAP_URL = 'https://www.solvia.es/sitemap_comprar_viviendas.xml';
+const NG_STATE_RE = /<script id="ng-state" type="application\/json">([\s\S]*?)<\/script>/;
 
-/** Municipios objetivo por defecto: Barcelona ciudad + área metropolitana cercana. */
 const DEFAULT_MUNICIPALITIES = [
   'barcelona',
   'lhospitalet-de-llobregat',
@@ -57,7 +49,6 @@ export class SolviaSource implements CrawlerSource {
     const errors: CrawlErrorRecord[] = [];
     const results: PropertyUpsertInput[] = [];
 
-    // 1) Sitemap → lista de municipios de Barcelona
     let municipalities: string[] = DEFAULT_MUNICIPALITIES;
     try {
       const xml = await fetchText(SITEMAP_URL, { limiter: this.limiter, timeoutMs: 20_000 });
@@ -68,10 +59,9 @@ export class SolviaSource implements CrawlerSource {
       log.info(`[solvia] sitemap OK, ${fromSitemap.length} municipios provincia BCN`);
     } catch (err) {
       errors.push(errorRecord(SITEMAP_URL, err));
-      log.warn(`[solvia] sitemap falló, sigo con DEFAULT_MUNICIPALITIES`, { err: String(err) });
+      log.warn(`[solvia] sitemap falló, sigo con DEFAULT_MUNICIPALITIES`);
     }
 
-    // 2) Por cada municipio, extraer URLs de inmueble del HTML del listado
     const detailUrls = new Set<string>();
     for (const muni of municipalities) {
       if (opts.maxItems && detailUrls.size >= opts.maxItems) break;
@@ -83,23 +73,19 @@ export class SolviaSource implements CrawlerSource {
         log.info(`[solvia] ${muni}: ${found.length} URLs (total ${detailUrls.size})`);
       } catch (err) {
         errors.push(errorRecord(url, err));
-        log.warn(`[solvia] municipio ${muni} falló`, { err: String(err) });
       }
     }
 
-    // 3) Fetch detalle de cada URL única y parsear
     const cap = opts.maxItems ?? detailUrls.size;
     const urls = Array.from(detailUrls).slice(0, cap);
-    log.info(`[solvia] parseando ${urls.length} detalles`);
+    log.info(`[solvia] parseando ${urls.length} detalles vía ng-state JSON`);
 
     for (const url of urls) {
       try {
         const html = await fetchText(url, { limiter: this.limiter, timeoutMs: 25_000 });
-        const property = parseDetail(url, html);
-        if (property) {
-          if (matchesPostalFilter(property.postalCode, opts.postalCodes)) {
-            results.push(property);
-          }
+        const property = parseDetailFromNgState(url, html);
+        if (property && matchesPostalFilter(property.postalCode, opts.postalCodes)) {
+          results.push(property);
         }
       } catch (err) {
         errors.push(errorRecord(url, err));
@@ -113,7 +99,7 @@ export class SolviaSource implements CrawlerSource {
   }
 }
 
-// ----- helpers internos -----
+// ----- helpers -----
 
 function extractBarcelonaMunicipalities(xml: string): string[] {
   const out: string[] = [];
@@ -137,7 +123,6 @@ function extractDetailUrls(html: string): string[] {
     if (!href) return;
     const absolute = href.startsWith('http') ? href : `https://www.solvia.es${href}`;
     if (DETAIL_URL_RE.test(absolute)) {
-      // Limpiar fragmentos/queries
       const clean = absolute.split('#')[0]?.split('?')[0];
       if (clean) urls.add(clean);
     }
@@ -145,105 +130,147 @@ function extractDetailUrls(html: string): string[] {
   return Array.from(urls);
 }
 
-function parseDetail(url: string, html: string): PropertyUpsertInput | null {
-  const $ = load(html);
+/** Estructura mínima del nodo `propertyBasicDetail` que nos interesa. */
+interface PropertyBasicDetail {
+  id?: string;
+  idVivienda?: string;
+  idPromocion?: string;
+  textoDescripcion?: string;
+  tituloFicha?: string;
+  cp?: string;
+  m2?: number;
+  precio?: number;
+  precioAntes?: number | null;
+  cuotaAlquiler?: number;
+  direccion?: string;
+  mostrarPrecio?: string;
+  poblacion?: { name?: string };
+  categoriaTipoVivienda?: { name?: string };
+  caracteristicas?: {
+    refCatastral?: string;
+    reformar?: boolean;
+    estado?: string;
+    vpo?: boolean;
+    amueblado?: boolean;
+    importeIbi?: number | null;
+    importeGastosComunidad?: number | null;
+  };
+  campanya?: { name?: string };
+  enSituacionEspecial?: string;
+}
 
+function parseDetailFromNgState(url: string, html: string): PropertyUpsertInput | null {
+  const match = html.match(NG_STATE_RE);
+  if (!match || !match[1]) return null;
+
+  let state: unknown;
+  try {
+    state = JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+  if (!state || typeof state !== 'object') return null;
+
+  const detail = (state as Record<string, unknown>).propertyBasicDetail as
+    | PropertyBasicDetail
+    | undefined;
+  if (!detail) return null;
+
+  // source_id desde la URL (mantiene el formato 26977-54362 igual que antes)
   const idMatch = url.match(DETAIL_ID_RE);
   if (!idMatch || !idMatch[1] || !idMatch[2]) return null;
   const sourceId = `${idMatch[1]}-${idMatch[2]}`;
 
-  const ogTitle = $('meta[property="og:title"]').attr('content') ?? '';
-  const ogDescription = $('meta[property="og:description"]').attr('content') ?? '';
-  const ogUrl = $('meta[property="og:url"]').attr('content') ?? url;
+  const description = cleanWhitespace(detail.textoDescripcion ?? null);
+  const characteristics = detail.caracteristicas ?? {};
 
-  // Página completa como descripción (incluye texto principal). Limpieza ligera.
-  const mainText =
-    cleanWhitespace($('main').text()) ??
-    cleanWhitespace($('app-property-detail').text()) ??
-    cleanWhitespace($('body').text()) ??
-    null;
+  const condition = mapEstadoToCondition(characteristics.estado, characteristics.reformar);
 
-  const description = cleanWhitespace(ogDescription) ?? mainText;
+  // Red flags: estructuradas (vpo, ocupado vía estado especial) + texto libre
+  const redFlags = new Set<string>(detectRedFlags(description));
+  if (characteristics.vpo === true) redFlags.add('vpo');
+  if (
+    detail.enSituacionEspecial === '1' ||
+    /ocupacional|inquilino|arrendat|estado ocupacional/i.test(description ?? '')
+  )
+    redFlags.add('occupied');
+  if (detail.mostrarPrecio === 'N') redFlags.add('hidden_price');
 
-  // Tipo: "Piso", "Casa", etc. — del title OG
-  const typeMatch = ogTitle.match(
-    /^(Piso|Casa|Chalet|Estudio|Local|Oficina|Garaje|Trastero|Suelo|Nave|Apartamento|Ático|Atico)/i,
-  );
-  const type = typeMatch && typeMatch[1] ? typeMatch[1].toLowerCase() : null;
+  // type: Solvia categoriza como "Viviendas", "Suelos", "Locales", etc. Mapeamos.
+  const tipoVivienda = detail.categoriaTipoVivienda?.name?.toLowerCase() ?? '';
+  const type = mapTipoVivienda(tipoVivienda, detail.tituloFicha);
 
-  // Address y ciudad: del title OG → "Piso en venta en C/ Villarroel, Barcelona, Barcelona - …"
-  let address: string | null = null;
-  let city: string | null = null;
-  const addrMatch = ogTitle.match(/en venta en\s+([^|]+?)\s*(?:\|.*)?$/i);
-  if (addrMatch && addrMatch[1]) {
-    const parts = addrMatch[1]
-      .split(/\s*-\s*|,/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    address = parts[0] ?? null;
-    city = parts[1] ?? null;
-  }
-
-  // m² del og:description o del texto
-  const m2Match = (ogDescription + ' ' + (mainText ?? '')).match(/(\d{2,4})\s*m\s*[²2]/);
-  const m2 = m2Match && m2Match[1] ? parseSquareMeters(m2Match[0]) : null;
-
-  // Dormitorios del title → "2-dormitorios" o de la descripción
-  const dormMatch =
-    ogTitle.match(/(\d+)[-\s]dormitor/i) ?? (mainText ?? '').match(/(\d+)\s*dormitor/i);
-  const rooms = dormMatch && dormMatch[1] ? parseRooms(dormMatch[1]) : null;
-
-  const bathMatch = (mainText ?? '').match(/(\d+)\s*baño/i);
-  const bathrooms = bathMatch && bathMatch[1] ? parseBathrooms(bathMatch[1]) : null;
-
-  const yearMatch = (mainText ?? '').match(
-    /(?:año|construc[ti][oó]n|construido en)\s*:?\s*(\d{4})/i,
-  );
-  const yearBuilt = yearMatch ? parseYear(yearMatch[0]) : null;
-
-  // Precio — buscar patrón "€ 150.000" o "150.000 €"
-  const priceMatch =
-    html.match(/(\d{1,3}(?:\.\d{3})+(?:,\d{2})?)\s*€/) ??
-    html.match(/€\s*(\d{1,3}(?:\.\d{3})+(?:,\d{2})?)/);
-  const price = priceMatch ? parsePriceEur(priceMatch[0]) : null;
-
-  // CP — buscar 5 dígitos en el texto principal o en address
-  const cpMatch = (mainText ?? html).match(/\b(0[78]\d{3}|17\d{3}|25\d{3}|43\d{3})\b/);
-  const postalCode = cpMatch ? cpMatch[1] : null;
-
-  // Referencia catastral si aparece (Solvia a veces la expone)
-  const refCadMatch = (mainText ?? '').match(/\b([0-9]{7}[A-Z]{2}[0-9]{4}[A-Z][0-9]{4}[A-Z]{2})\b/);
-  const cadastralRef = refCadMatch ? refCadMatch[1] : null;
+  // precio: precioAntes si hay rebaja, si no precio.
+  // Nos interesa el precio ACTUAL (`precio`), el precioAntes podría servir
+  // para histórico pero esta fase no lo persistimos.
+  const price =
+    typeof detail.precio === 'number' ? detail.precio : parsePriceEur(String(detail.precio ?? ''));
+  const m2 = typeof detail.m2 === 'number' && detail.m2 > 0 ? detail.m2 : null;
 
   return {
     source: 'solvia',
     sourceId,
-    sourceUrl: ogUrl,
+    sourceUrl: url,
     type,
-    address,
-    city,
-    postalCode,
-    province: provinceFromPostalCode(postalCode),
+    address: detail.direccion ?? null,
+    city: detail.poblacion?.name ?? null,
+    postalCode: detail.cp ?? null,
+    province: provinceFromPostalCode(detail.cp ?? null),
+    cadastralRef: characteristics.refCatastral ?? null,
     m2,
-    rooms,
-    bathrooms,
-    yearBuilt,
     price,
     pricePerM2: pricePerM2(price, m2),
     description,
     descriptionHash: hashDescription(description),
-    cadastralRef,
-    hasTerrace: detectTerrace(description),
-    hasElevator: detectElevator(description),
-    floor: parseFloor(description ?? ''),
-    orientation: detectOrientation(description),
-    condition: detectCondition(description),
+    condition,
     isBankOwned: true,
     isAuction: false,
-    redFlags: detectRedFlags(description),
+    redFlags: Array.from(redFlags),
     status: 'active',
-    rawData: { ogTitle, ogDescription, mainTextLength: mainText?.length ?? 0 },
+    rawData: {
+      idSolvia: detail.id,
+      precioAntes: detail.precioAntes ?? null,
+      cuotaAlquilerEur: detail.cuotaAlquiler ?? null,
+      importeIbi: characteristics.importeIbi ?? null,
+      importeGastosComunidad: characteristics.importeGastosComunidad ?? null,
+      campanya: detail.campanya?.name ?? null,
+      tipoVivienda,
+    },
   };
+}
+
+function mapTipoVivienda(tipoVivienda: string, tituloFicha: string | undefined): string | null {
+  // Solvia: "Viviendas", "Suelos", "Locales", "Garajes y trasteros", "Oficinas", "Naves"
+  if (tipoVivienda.includes('vivienda')) {
+    // Refinamos con título de ficha si está disponible (a veces "Piso", "Casa", etc.)
+    if (tituloFicha) {
+      const t = tituloFicha.toLowerCase();
+      if (/(piso|apartamento|estudio)/.test(t)) return 'piso';
+      if (/(casa|chalet|villa)/.test(t)) return 'casa';
+      if (/(ático|atico)/.test(t)) return 'atico';
+    }
+    return 'piso'; // default razonable
+  }
+  if (tipoVivienda.includes('suelo')) return 'terreno';
+  if (tipoVivienda.includes('local')) return 'local';
+  if (tipoVivienda.includes('oficina')) return 'local';
+  if (tipoVivienda.includes('nave')) return 'local';
+  if (tipoVivienda.includes('garaje') || tipoVivienda.includes('trastero')) return 'local';
+  return null;
+}
+
+function mapEstadoToCondition(
+  estado: string | null | undefined,
+  reformar: boolean | undefined,
+): string {
+  if (reformar === true) return 'needs_reform';
+  if (!estado) return 'unknown';
+  const e = estado.toLowerCase();
+  if (e.includes('obra nueva') || e.includes('estrenar')) return 'new';
+  if (e.includes('reformar') || e.includes('a reformar')) return 'needs_reform';
+  if (e.includes('reformado')) return 'recently_reformed';
+  if (e.includes('buen estado') || e.includes('seminuevo')) return 'good';
+  return 'unknown';
 }
 
 function matchesPostalFilter(

@@ -5,6 +5,7 @@ const SOURCE_LABEL: Record<PropertySource, string> = {
   idealista: 'Idealista',
   fotocasa: 'Fotocasa',
   habitaclia: 'Habitaclia',
+  pisos: 'Pisos.com',
   boe: 'BOE',
   sareb: 'SAREB',
   aliseda: 'Aliseda',

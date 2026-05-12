@@ -1,7 +1,7 @@
-// Capa pública del data layer. Todas las funciones son async para que el swap
-// a Prisma queries (cuando exista la DB) sea trivial: solo cambia el cuerpo.
+// Capa pública del data layer. Conecta a Prisma vía ./db cuando hay datos en la DB;
+// cae a mocks si la DB está vacía (útil en local sin haber corrido el crawler).
 //
-// La UI nunca debe importar nada de `./mocks/` directamente.
+// La UI nunca debe importar nada de `./mocks/` ni de `./db` directamente.
 
 import type {
   AgencyMember,
@@ -18,6 +18,27 @@ import { propertiesMock } from './mocks/properties';
 import { zonesMock } from './mocks/zones';
 import { capturesMock } from './mocks/captures';
 import { listingsMock, listingLeadsMock } from './mocks/listings';
+import {
+  fetchOpportunities,
+  fetchOpportunityStats,
+  fetchPropertyById,
+  type DbOpportunityFilters,
+} from './db';
+
+// Cache simple para no consultar count en cada llamada
+let hasRealDataCache: boolean | null = null;
+async function hasRealData(): Promise<boolean> {
+  if (hasRealDataCache !== null) return hasRealDataCache;
+  try {
+    const stats = await fetchOpportunityStats();
+    hasRealDataCache = stats.total > 0;
+    return hasRealDataCache;
+  } catch (err) {
+    console.warn('[repositories] fallo conectando a DB, uso mocks:', err);
+    hasRealDataCache = false;
+    return false;
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sesión actual (mock — sustituir por Auth.js cuando esté listo)
@@ -45,6 +66,10 @@ export interface OpportunityFilters {
 }
 
 export async function getOpportunities(filters: OpportunityFilters = {}): Promise<Property[]> {
+  if (await hasRealData()) {
+    return fetchOpportunities(filters as DbOpportunityFilters);
+  }
+  // Fallback a mocks
   const items = propertiesMock.filter((p) => {
     if (filters.postalCodes?.length && !filters.postalCodes.includes(p.postalCode)) return false;
     if (filters.minScore !== undefined && p.opportunityScore < filters.minScore) return false;
@@ -63,6 +88,9 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
 }
 
 export async function getPropertyById(id: string): Promise<Property | null> {
+  if (await hasRealData()) {
+    return fetchPropertyById(id);
+  }
   return propertiesMock.find((p) => p.id === id) ?? null;
 }
 
@@ -72,6 +100,9 @@ export async function getOpportunityStats(): Promise<{
   highScore: number;
   avgScore: number;
 }> {
+  if (await hasRealData()) {
+    return fetchOpportunityStats();
+  }
   const items = propertiesMock;
   const oneDayAgo = Date.now() - 86_400_000;
   const newToday = items.filter((p) => p.firstSeen.getTime() > oneDayAgo).length;
@@ -84,7 +115,7 @@ export async function getOpportunityStats(): Promise<{
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Zones
+// Zones / Captures / Listings — siguen con mocks hasta Fase 3-4
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getZones(): Promise<Zone[]> {
@@ -94,10 +125,6 @@ export async function getZones(): Promise<Zone[]> {
 export async function getZoneById(id: string): Promise<Zone | null> {
   return zonesMock.find((z) => z.id === id) ?? null;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Captures
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getCaptures(): Promise<Capture[]> {
   return capturesMock;
@@ -127,10 +154,6 @@ export async function getCaptureStats(): Promise<{
   const active = capturesMock.filter((c) => c.status !== 'signed' && c.status !== 'lost').length;
   return { total, active, signed: signedItems.length, signedValue };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Listings
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getListings(): Promise<Listing[]> {
   return listingsMock;

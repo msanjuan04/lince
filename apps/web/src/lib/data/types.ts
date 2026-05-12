@@ -19,6 +19,7 @@ export type PropertySource =
   | 'idealista'
   | 'fotocasa'
   | 'habitaclia'
+  | 'pisos'
   | 'boe'
   | 'sareb'
   | 'aliseda'
