@@ -1,0 +1,73 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+
+const POSTAL_CODE_RE = /^\d{5}$/;
+
+const PROPERTY_TYPES = ['piso', 'casa', 'atico', 'duplex', 'local', 'terreno'] as const;
+const ALERT_CHANNELS = ['email', 'whatsapp', 'telegram'] as const;
+
+export const createZoneSchema = z.object({
+  name: z.string().trim().min(2, 'Nombre demasiado corto').max(80, 'Nombre demasiado largo'),
+  postalCodes: z
+    .string()
+    .trim()
+    .min(1, 'Indica al menos un código postal')
+    .transform((s) =>
+      s
+        .split(/[\s,;]+/)
+        .map((cp) => cp.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().regex(POSTAL_CODE_RE, 'Código postal inválido')).min(1)),
+  minScore: z.coerce.number().min(0).max(100).default(60),
+  maxPrice: z
+    .union([z.literal(''), z.coerce.number().int().positive()])
+    .transform((v) => (v === '' ? null : v))
+    .nullable()
+    .default(null),
+  types: z.array(z.enum(PROPERTY_TYPES)).default([]),
+  minRooms: z
+    .union([z.literal(''), z.coerce.number().int().min(0).max(10)])
+    .transform((v) => (v === '' ? null : v))
+    .nullable()
+    .default(null),
+  alertChannels: z.array(z.enum(ALERT_CHANNELS)).min(1, 'Elige al menos un canal'),
+});
+
+export type CreateZoneState =
+  | { status: 'idle' }
+  | { status: 'success'; zoneId: string }
+  | { status: 'error'; fieldErrors: Record<string, string[]>; formError?: string };
+
+export async function createZoneAction(
+  _prev: CreateZoneState,
+  formData: FormData,
+): Promise<CreateZoneState> {
+  const raw = {
+    name: formData.get('name'),
+    postalCodes: formData.get('postalCodes'),
+    minScore: formData.get('minScore') || '60',
+    maxPrice: formData.get('maxPrice') || '',
+    types: formData.getAll('types'),
+    minRooms: formData.get('minRooms') || '',
+    alertChannels: formData.getAll('alertChannels'),
+  };
+
+  const parsed = createZoneSchema.safeParse(raw);
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string[]> = {};
+    for (const issue of parsed.error.issues) {
+      const key = issue.path[0]?.toString() ?? '_';
+      (fieldErrors[key] ??= []).push(issue.message);
+    }
+    return { status: 'error', fieldErrors };
+  }
+
+  // TODO(marc): persistir en DB cuando exista Supabase. Por ahora simulo el insert.
+  console.warn('[createZoneAction] mock insert:', parsed.data);
+
+  revalidatePath('/zonas');
+  return { status: 'success', zoneId: `zone-mock-${Date.now()}` };
+}
