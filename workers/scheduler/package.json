@@ -1,5 +1,5 @@
 {
-  "name": "@lince/crawler-portales",
+  "name": "@lince/scheduler",
   "version": "0.0.0",
   "private": true,
   "main": "./src/index.ts",
@@ -7,15 +7,18 @@
   "scripts": {
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "crawl": "tsx src/cli.ts"
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "trigger-now": "tsx src/trigger.ts"
   },
   "dependencies": {
-    "@lince/crawlers-core": "workspace:*",
+    "@lince/crawler-portales": "workspace:*",
     "@lince/db": "workspace:*",
-    "cheerio": "^1.0.0"
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "@types/node-cron": "^3.0.11",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

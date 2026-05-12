@@ -24,13 +24,7 @@ import {
   provinceFromPostalCode,
 } from '@lince/crawlers-core';
 import type { PropertyUpsertInput } from '@lince/db';
-import type {
-  CrawlerSource,
-  CrawlOptions,
-  CrawlOutcome,
-  CrawlErrorRecord,
-  Logger,
-} from './types.js';
+import type { CrawlerSource, CrawlOptions, CrawlOutcome, CrawlErrorRecord, Logger } from './types';
 
 const PISOS_BASE = 'https://www.pisos.com';
 const LIST_URL = `${PISOS_BASE}/venta/pisos-barcelona_capital/`;

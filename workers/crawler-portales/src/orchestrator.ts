@@ -2,7 +2,7 @@
 // upsert, registra una fila en `crawler_runs` con contadores y errores.
 
 import { crawlerRunsRepo, propertiesRepo } from '@lince/db';
-import type { CrawlOptions, CrawlerSource, CrawlErrorRecord, Logger } from './sources/types.js';
+import type { CrawlOptions, CrawlerSource, CrawlErrorRecord, Logger } from './sources/types';
 
 export type OrchestratorResult = {
   runId: string;

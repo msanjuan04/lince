@@ -3,10 +3,10 @@
 //
 // Uso: pnpm --filter @lince/crawler-portales exec tsx src/probe-crawl.ts <solvia|boe|pisos> [--max N]
 
-import { SolviaSource } from './sources/solvia.js';
-import { BoeSource } from './sources/boe.js';
-import { PisosSource } from './sources/pisos.js';
-import type { CrawlerSource } from './sources/types.js';
+import { SolviaSource } from './sources/solvia';
+import { BoeSource } from './sources/boe';
+import { PisosSource } from './sources/pisos';
+import type { CrawlerSource } from './sources/types';
 
 const SOURCES: Record<string, () => CrawlerSource> = {
   solvia: () => new SolviaSource(),

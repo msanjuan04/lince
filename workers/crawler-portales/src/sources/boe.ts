@@ -22,13 +22,7 @@ import {
   provinceFromPostalCode,
 } from '@lince/crawlers-core';
 import type { PropertyUpsertInput } from '@lince/db';
-import type {
-  CrawlerSource,
-  CrawlOptions,
-  CrawlOutcome,
-  CrawlErrorRecord,
-  Logger,
-} from './types.js';
+import type { CrawlerSource, CrawlOptions, CrawlOutcome, CrawlErrorRecord, Logger } from './types';
 
 const PROVINCE_CODES: Record<string, string> = {
   '08': 'Barcelona',

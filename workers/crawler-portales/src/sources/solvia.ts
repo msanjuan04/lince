@@ -14,13 +14,7 @@ import {
   provinceFromPostalCode,
 } from '@lince/crawlers-core';
 import type { PropertyUpsertInput } from '@lince/db';
-import type {
-  CrawlerSource,
-  CrawlOptions,
-  CrawlOutcome,
-  CrawlErrorRecord,
-  Logger,
-} from './types.js';
+import type { CrawlerSource, CrawlOptions, CrawlOutcome, CrawlErrorRecord, Logger } from './types';
 
 const MUNICIPALITY_URL_RE =
   /^https:\/\/www\.solvia\.es\/es\/comprar\/viviendas\/barcelona\/[a-z0-9-]+$/;
