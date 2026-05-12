@@ -7,7 +7,7 @@ import {
   getPropertyById,
   getPropertyHistory,
 } from '@/lib/data/repositories';
-import { getPropertyTrack, getTracksMap } from '@/lib/data/tracking';
+import { getPropertyTrack, getTracksMap, listMyTracks } from '@/lib/data/tracking';
 import type { OpportunityFilters } from '@/lib/data/repositories';
 import type { PropertyType } from '@/lib/data/types';
 import { OpportunitiesView } from './_components/OpportunitiesView';
@@ -29,6 +29,10 @@ interface PageProps {
     maxPrice?: string;
     minRooms?: string;
     selected?: string;
+    origin?: string;
+    sort?: string;
+    noRedFlags?: string;
+    onlyTracked?: string;
   }>;
 }
 
@@ -55,6 +59,29 @@ export default async function OportunidadesPage({ searchParams }: PageProps) {
   if (params.minRooms) {
     const rooms = Number(params.minRooms);
     if (!Number.isNaN(rooms)) filters.minRooms = rooms;
+  }
+  if (
+    params.origin === 'auction' ||
+    params.origin === 'bank_owned' ||
+    params.origin === 'private'
+  ) {
+    filters.origin = params.origin;
+  }
+  if (
+    params.sort === 'delta' ||
+    params.sort === 'price_asc' ||
+    params.sort === 'price_desc' ||
+    params.sort === 'eurm2_asc' ||
+    params.sort === 'new' ||
+    params.sort === 'score'
+  ) {
+    filters.sort = params.sort;
+  }
+  if (params.noRedFlags === '1') filters.excludeRedFlags = true;
+  if (params.onlyTracked === '1') {
+    const tracks = await listMyTracks();
+    filters.onlyIds = tracks.map((t) => t.propertyId);
+    if (filters.onlyIds.length === 0) filters.onlyIds = ['00000000-0000-0000-0000-000000000000']; // forzar 0 resultados
   }
 
   const [items, stats] = await Promise.all([getOpportunities(filters), getOpportunityStats()]);

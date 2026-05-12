@@ -54,6 +54,10 @@ export interface OpportunityFilters {
   minRooms?: number;
   types?: PropertyType[];
   search?: string;
+  origin?: 'auction' | 'bank_owned' | 'private' | null;
+  excludeRedFlags?: boolean;
+  onlyIds?: string[];
+  sort?: 'score' | 'delta' | 'price_asc' | 'price_desc' | 'eurm2_asc' | 'new';
 }
 
 export async function getOpportunities(filters: OpportunityFilters = {}): Promise<Property[]> {

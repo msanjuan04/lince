@@ -38,6 +38,22 @@ const PRICE_OPTIONS = [
   { value: '1000000', label: 'hasta 1 M€' },
 ];
 
+const SORT_OPTIONS = [
+  { value: 'score', label: 'Mejor score' },
+  { value: 'delta', label: 'Mayor Δ vs zona' },
+  { value: 'price_asc', label: 'Precio: menor primero' },
+  { value: 'price_desc', label: 'Precio: mayor primero' },
+  { value: 'eurm2_asc', label: '€/m²: más barato primero' },
+  { value: 'new', label: 'Más recientes' },
+];
+
+const ORIGIN_OPTIONS = [
+  { value: 'all', label: 'Cualquier origen' },
+  { value: 'auction', label: 'Solo subastas (BOE)' },
+  { value: 'bank_owned', label: 'Solo bank-owned' },
+  { value: 'private', label: 'Solo portales' },
+];
+
 export function OpportunityFilters() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -93,10 +109,27 @@ export function OpportunityFilters() {
   const score = searchParams.get('score') ?? 'all';
   const type = searchParams.get('type') ?? 'all';
   const maxPrice = searchParams.get('maxPrice') ?? 'all';
+  const origin = searchParams.get('origin') ?? 'all';
+  const sort = searchParams.get('sort') ?? 'score';
+  const noRedFlags = searchParams.get('noRedFlags') === '1';
+  const onlyTracked = searchParams.get('onlyTracked') === '1';
 
-  const hasActive = ['q', 'score', 'type', 'maxPrice', 'cp', 'minRooms'].some((k) =>
-    searchParams.has(k),
-  );
+  function toggleParam(key: string, currentlyOn: boolean) {
+    updateParam(key, currentlyOn ? null : '1');
+  }
+
+  const hasActive = [
+    'q',
+    'score',
+    'type',
+    'maxPrice',
+    'cp',
+    'minRooms',
+    'origin',
+    'sort',
+    'noRedFlags',
+    'onlyTracked',
+  ].some((k) => searchParams.has(k));
 
   return (
     <div className="border-border flex flex-col gap-2 border-b border-t py-3 sm:flex-row sm:items-center sm:gap-3">
@@ -166,6 +199,43 @@ export function OpportunityFilters() {
           </SelectContent>
         </Select>
 
+        <Select value={origin} onValueChange={(v) => updateParam('origin', v)}>
+          <SelectTrigger size="sm" className="w-[160px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ORIGIN_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={sort} onValueChange={(v) => updateParam('sort', v === 'score' ? null : v)}>
+          <SelectTrigger size="sm" className="w-[176px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <ToggleChip
+          active={onlyTracked}
+          onClick={() => toggleParam('onlyTracked', onlyTracked)}
+          label="Mis trackeadas"
+        />
+        <ToggleChip
+          active={noRedFlags}
+          onClick={() => toggleParam('noRedFlags', noRedFlags)}
+          label="Sin banderas rojas"
+        />
+
         {hasActive ? (
           <Button
             variant="ghost"
@@ -180,5 +250,29 @@ export function OpportunityFilters() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+function ToggleChip({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? 'bg-foreground text-background border-foreground inline-flex h-7 items-center border px-2.5 text-[0.8rem] font-medium'
+          : 'border-border hover:bg-accent/40 text-foreground inline-flex h-7 items-center border px-2.5 text-[0.8rem] font-medium transition-colors'
+      }
+    >
+      {label}
+    </button>
   );
 }

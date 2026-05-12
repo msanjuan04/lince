@@ -210,6 +210,10 @@ export interface DbOpportunityFilters {
   minRooms?: number;
   types?: PropertyType[];
   search?: string;
+  origin?: 'auction' | 'bank_owned' | 'private' | null;
+  excludeRedFlags?: boolean;
+  onlyIds?: string[];
+  sort?: 'score' | 'delta' | 'price_asc' | 'price_desc' | 'eurm2_asc' | 'new';
 }
 
 export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Promise<Property[]> {
@@ -234,6 +238,20 @@ export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Pr
       { description: { contains: filters.search, mode: 'insensitive' } },
     ];
   }
+  if (filters.origin === 'auction') {
+    where.isAuction = true;
+  } else if (filters.origin === 'bank_owned') {
+    where.isBankOwned = true;
+  } else if (filters.origin === 'private') {
+    where.isAuction = false;
+    where.isBankOwned = false;
+  }
+  if (filters.onlyIds && filters.onlyIds.length > 0) {
+    where.id = { in: filters.onlyIds };
+  }
+  if (filters.excludeRedFlags) {
+    where.redFlags = { isEmpty: true };
+  }
 
   const rows = await prisma.property.findMany({
     where,
@@ -252,12 +270,32 @@ export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Pr
     adapted = adapted.filter((p) => p.opportunityScore !== null && p.opportunityScore >= min);
   }
 
-  // Orden: primero los que tienen score calculado (desc), luego los sin score.
-  return adapted.sort((a, b) => {
-    const aScore = a.opportunityScore ?? -1;
-    const bScore = b.opportunityScore ?? -1;
-    return bScore - aScore;
+  // Sort según el criterio elegido.
+  const sortBy = filters.sort ?? 'score';
+  adapted.sort((a, b) => {
+    switch (sortBy) {
+      case 'delta': {
+        const ad = a.zoneDeltaPct ?? -Infinity;
+        const bd = b.zoneDeltaPct ?? -Infinity;
+        return bd - ad;
+      }
+      case 'price_asc':
+        return (a.price ?? Infinity) - (b.price ?? Infinity);
+      case 'price_desc':
+        return (b.price ?? -Infinity) - (a.price ?? -Infinity);
+      case 'eurm2_asc':
+        return (a.pricePerM2 ?? Infinity) - (b.pricePerM2 ?? Infinity);
+      case 'new':
+        return b.firstSeen.getTime() - a.firstSeen.getTime();
+      case 'score':
+      default: {
+        const aScore = a.opportunityScore ?? -1;
+        const bScore = b.opportunityScore ?? -1;
+        return bScore - aScore;
+      }
+    }
   });
+  return adapted;
 }
 
 export async function fetchPropertyById(id: string): Promise<Property | null> {
