@@ -68,11 +68,14 @@ function ListingCard({ listing }: { listing: Listing }) {
           {property.address}
         </h3>
         <p className="text-muted-foreground text-xs">
-          {property.city}{' '}
-          <span className="ml-1 font-mono tabular-nums">· {property.postalCode}</span>
+          {property.city ?? '—'}
+          {property.postalCode ? (
+            <span className="ml-1 font-mono tabular-nums">· {property.postalCode}</span>
+          ) : null}
           <span className="ml-2">
-            · {propertyTypeLabel(property.type)} · {formatM2(property.m2)}
-            {property.rooms > 0 ? ` · ${property.rooms} hab` : ''}
+            {property.type ? `· ${propertyTypeLabel(property.type)} ` : ''}
+            {property.m2 !== null ? `· ${formatM2(property.m2)}` : ''}
+            {property.rooms !== null && property.rooms > 0 ? ` · ${property.rooms} hab` : ''}
           </span>
         </p>
       </div>

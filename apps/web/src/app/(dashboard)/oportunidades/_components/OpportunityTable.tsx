@@ -83,10 +83,11 @@ function PropertyRow({
   property: Property;
   onSelect: (id: string) => void;
 }) {
-  const discountPct =
-    (property.zoneAvgPricePerM2 - property.pricePerM2) / property.zoneAvgPricePerM2;
-  const sign = discountPct >= 0 ? '−' : '+';
-  const discountLabel = `${sign}${Math.abs(Math.round(discountPct * 100))}%`;
+  const discountPct = property.zoneDeltaPct;
+  const discountLabel =
+    discountPct === null
+      ? '—'
+      : `${discountPct >= 0 ? '−' : '+'}${Math.abs(Math.round(discountPct * 100))}%`;
 
   return (
     <TableRow
@@ -94,24 +95,34 @@ function PropertyRow({
       className="hover:bg-accent/40 group h-14 cursor-pointer transition-colors"
     >
       <TableCell className="pl-0">
-        <ScoreBadge score={property.opportunityScore} />
+        {property.opportunityScore !== null ? (
+          <ScoreBadge score={property.opportunityScore} />
+        ) : (
+          <span className="text-muted-foreground/60 text-xs">—</span>
+        )}
       </TableCell>
       <TableCell>
         <div className="flex flex-col gap-0.5">
-          <span className="line-clamp-1 text-sm font-medium">{property.address}</span>
+          <span className="line-clamp-1 text-sm font-medium">{property.address ?? '—'}</span>
           <span className="text-muted-foreground text-xs">
-            {property.city}
-            <span className="ml-1.5 font-mono tabular-nums">· {property.postalCode}</span>
+            {property.city ?? '—'}
+            {property.postalCode ? (
+              <span className="ml-1.5 font-mono tabular-nums">· {property.postalCode}</span>
+            ) : null}
           </span>
         </div>
       </TableCell>
       <TableCell className="text-muted-foreground hidden text-sm md:table-cell">
-        <span className="text-foreground">{propertyTypeLabel(property.type)}</span>
-        <span className="ml-2 tabular-nums">
-          {property.m2}
-          <span className="text-muted-foreground/60"> m²</span>
+        <span className="text-foreground">
+          {property.type ? propertyTypeLabel(property.type) : '—'}
         </span>
-        {property.rooms > 0 ? (
+        {property.m2 !== null ? (
+          <span className="ml-2 tabular-nums">
+            {property.m2}
+            <span className="text-muted-foreground/60"> m²</span>
+          </span>
+        ) : null}
+        {property.rooms !== null && property.rooms > 0 ? (
           <span className="ml-2 tabular-nums">
             {property.rooms}
             <span className="text-muted-foreground/60"> hab</span>
@@ -119,18 +130,18 @@ function PropertyRow({
         ) : null}
       </TableCell>
       <TableCell className="text-right text-sm font-medium tabular-nums">
-        {formatEuros(property.price)}
+        {property.price !== null ? formatEuros(property.price) : '—'}
       </TableCell>
       <TableCell className="text-muted-foreground hidden text-right text-sm tabular-nums lg:table-cell">
-        {formatPricePerM2(property.pricePerM2)}
+        {property.pricePerM2 !== null ? formatPricePerM2(property.pricePerM2) : '—'}
       </TableCell>
       <TableCell className="hidden text-right text-sm tabular-nums lg:table-cell">
         <span
           className={cn(
             'font-medium',
-            discountPct >= 0.2
+            discountPct !== null && discountPct >= 0.2
               ? 'text-highlight'
-              : discountPct >= 0
+              : discountPct !== null && discountPct >= 0
                 ? 'text-foreground'
                 : 'text-muted-foreground',
           )}

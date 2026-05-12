@@ -47,19 +47,25 @@ function CardContent({ capture, dragging }: { capture: Capture; dragging: boolea
       )}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <ScoreBadge score={property.opportunityScore} size="sm" />
+        {property.opportunityScore !== null ? (
+          <ScoreBadge score={property.opportunityScore} size="sm" />
+        ) : (
+          <span className="text-muted-foreground text-xs">—</span>
+        )}
         <span className="text-muted-foreground font-mono text-[10px] tabular-nums">
-          {property.postalCode}
+          {property.postalCode ?? '—'}
         </span>
       </div>
       <div className="flex flex-col gap-0.5">
-        <h3 className="line-clamp-1 text-sm font-medium leading-snug">{property.address}</h3>
+        <h3 className="line-clamp-1 text-sm font-medium leading-snug">{property.address ?? '—'}</h3>
         <p className="text-muted-foreground text-xs">
-          {property.city} · {propertyTypeLabel(property.type)} · {formatM2(property.m2)}
+          {property.city ?? '—'}
+          {property.type ? ` · ${propertyTypeLabel(property.type)}` : ''}
+          {property.m2 !== null ? ` · ${formatM2(property.m2)}` : ''}
         </p>
       </div>
       <div className="text-foreground text-sm font-medium tabular-nums">
-        {formatEuros(property.price)}
+        {property.price !== null ? formatEuros(property.price) : '—'}
       </div>
       {capture.ownerName ? (
         <div className="border-border border-t pt-2 text-xs">

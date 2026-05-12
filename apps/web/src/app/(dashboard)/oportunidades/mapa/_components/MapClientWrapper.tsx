@@ -3,8 +3,8 @@
 import dynamic from 'next/dynamic';
 import type { Property } from '@/lib/data/types';
 
-// Leaflet usa `window`. Lo cargamos solo en cliente (ssr:false sólo permitido
-// en Client Components desde Next 16, por eso este wrapper).
+type GeoProperty = Property & { lat: number; lng: number };
+
 const OpportunitiesMap = dynamic(
   () => import('./OpportunitiesMap').then((m) => m.OpportunitiesMap),
   { ssr: false, loading: () => <MapSkeleton /> },
@@ -18,6 +18,6 @@ function MapSkeleton() {
   );
 }
 
-export function MapClientWrapper({ properties }: { properties: Property[] }) {
+export function MapClientWrapper({ properties }: { properties: GeoProperty[] }) {
   return <OpportunitiesMap properties={properties} />;
 }

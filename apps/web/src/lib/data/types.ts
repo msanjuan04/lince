@@ -59,29 +59,51 @@ export interface PriceHistoryEntry {
   deltaPct: number | null;
 }
 
+/**
+ * Modelo Property tal y como lo consume la UI.
+ *
+ * Honestidad: TODO campo que no podamos garantizar como real viene como `null`
+ * (incluyendo lat/lng — NO usamos fallback de centroide CP) o `undefined`. La
+ * UI debe renderizar `—` para nulls y nunca inventar coordenadas / m² / etc.
+ */
 export interface Property {
   id: string;
   source: PropertySource;
+  sourceLabel: string; // texto humano: "Pisos.com", "BOE Subastas", o el raw si es desconocido
   sourceId: string;
   sourceUrl: string | null;
-  type: PropertyType;
-  address: string;
-  city: string;
-  postalCode: string;
-  province: string;
-  lat: number;
-  lng: number;
+  type: PropertyType | null;
+  address: string | null;
+  city: string | null;
+  postalCode: string | null;
+  province: string | null;
+  lat: number | null;
+  lng: number | null;
   cadastralRef: string | null;
-  m2: number;
-  rooms: number;
-  bathrooms: number;
+  m2: number | null;
+  rooms: number | null;
+  bathrooms: number | null;
   yearBuilt: number | null;
-  price: number;
-  pricePerM2: number;
-  zoneAvgPricePerM2: number;
-  opportunityScore: number;
-  status: 'active' | 'sold' | 'withdrawn';
-  description: string;
+  price: number | null;
+  pricePerM2: number | null;
+  /** Media €/m² de la zona — null si la muestra del CP es insuficiente (<3). */
+  zoneAvgPricePerM2: number | null;
+  /** Nº de propiedades usadas para calcular la media de zona. */
+  zoneSampleSize: number;
+  /** Delta % vs zona — null si zoneAvgPricePerM2 es null. */
+  zoneDeltaPct: number | null;
+  /** Score 0..100. Null si no calculable (sin precio o sin muestra de zona). */
+  opportunityScore: number | null;
+  status: 'active' | 'auction' | 'sold' | 'withdrawn' | null;
+  isAuction: boolean;
+  isBankOwned: boolean;
+  condition: string | null;
+  hasTerrace: boolean | null;
+  hasElevator: boolean | null;
+  floor: string | null;
+  orientation: string | null;
+  redFlags: string[];
+  description: string | null;
   firstSeen: Date;
   lastSeen: Date;
 }

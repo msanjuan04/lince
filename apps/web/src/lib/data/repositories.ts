@@ -1,7 +1,7 @@
-// Capa pública del data layer. Conecta a Prisma vía ./db cuando hay datos en la DB;
-// cae a mocks si la DB está vacía (útil en local sin haber corrido el crawler).
+// Capa pública del data layer. Conecta directamente a Prisma vía `./db`.
 //
-// La UI nunca debe importar nada de `./mocks/` ni de `./db` directamente.
+// Política de la sesión: la app solo muestra datos reales de Supabase. Si la
+// DB falla o está vacía, devolvemos vacíos honestos en lugar de mocks.
 
 import type {
   AgencyMember,
@@ -15,7 +15,6 @@ import type {
   Zone,
 } from './types';
 import { currentAgency, currentUser, agencyMembersMock } from './mocks/agency';
-import { propertiesMock } from './mocks/properties';
 import { zonesMock } from './mocks/zones';
 import { capturesMock } from './mocks/captures';
 import { listingsMock, listingLeadsMock } from './mocks/listings';
@@ -23,6 +22,7 @@ import {
   fetchBucketDistribution,
   fetchOpportunities,
   fetchOpportunitiesForMap,
+  fetchOpportunitiesWithoutGeo,
   fetchOpportunityStats,
   fetchPropertyById,
   fetchPropertyHistory,
@@ -31,23 +31,8 @@ import {
   type DbOpportunityFilters,
 } from './db';
 
-// Cache simple para no consultar count en cada llamada
-let hasRealDataCache: boolean | null = null;
-async function hasRealData(): Promise<boolean> {
-  if (hasRealDataCache !== null) return hasRealDataCache;
-  try {
-    const stats = await fetchOpportunityStats();
-    hasRealDataCache = stats.total > 0;
-    return hasRealDataCache;
-  } catch (err) {
-    console.warn('[repositories] fallo conectando a DB, uso mocks:', err);
-    hasRealDataCache = false;
-    return false;
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Sesión actual (mock — sustituir por Auth.js cuando esté listo)
+// Sesión (placeholder hasta Auth.js v5 — Fase 5+)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getCurrentSession() {
@@ -59,7 +44,7 @@ export async function getAgencyMembers(): Promise<AgencyMember[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Propiedades / Oportunidades
+// Propiedades / Oportunidades — TODO REAL
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface OpportunityFilters {
@@ -72,66 +57,61 @@ export interface OpportunityFilters {
 }
 
 export async function getOpportunities(filters: OpportunityFilters = {}): Promise<Property[]> {
-  if (await hasRealData()) {
-    return fetchOpportunities(filters as DbOpportunityFilters);
+  try {
+    return await fetchOpportunities(filters as DbOpportunityFilters);
+  } catch (err) {
+    console.warn('[repositories] getOpportunities falló:', err);
+    return [];
   }
-  // Fallback a mocks
-  const items = propertiesMock.filter((p) => {
-    if (filters.postalCodes?.length && !filters.postalCodes.includes(p.postalCode)) return false;
-    if (filters.minScore !== undefined && p.opportunityScore < filters.minScore) return false;
-    if (filters.maxPrice !== undefined && p.price > filters.maxPrice) return false;
-    if (filters.minRooms !== undefined && p.rooms < filters.minRooms) return false;
-    if (filters.types?.length && !filters.types.includes(p.type)) return false;
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      const haystack = `${p.address} ${p.city} ${p.postalCode} ${p.description}`.toLowerCase();
-      if (!haystack.includes(q)) return false;
-    }
-    return true;
-  });
-
-  return items.sort((a, b) => b.opportunityScore - a.opportunityScore);
 }
 
 export async function getPropertyById(id: string): Promise<Property | null> {
-  if (await hasRealData()) {
-    return fetchPropertyById(id);
+  try {
+    return await fetchPropertyById(id);
+  } catch (err) {
+    console.warn('[repositories] getPropertyById falló:', err);
+    return null;
   }
-  return propertiesMock.find((p) => p.id === id) ?? null;
 }
 
 export async function getPropertyHistory(id: string): Promise<PriceHistoryEntry[]> {
-  if (await hasRealData()) {
-    return fetchPropertyHistory(id);
+  try {
+    return await fetchPropertyHistory(id);
+  } catch (err) {
+    console.warn('[repositories] getPropertyHistory falló:', err);
+    return [];
   }
-  return [];
 }
 
 export async function getTopOpportunities(limit = 5): Promise<Property[]> {
-  if (await hasRealData()) {
-    return fetchTopOpportunities(limit);
+  try {
+    return await fetchTopOpportunities(limit);
+  } catch {
+    return [];
   }
-  return [...propertiesMock]
-    .sort((a, b) => b.opportunityScore - a.opportunityScore)
-    .slice(0, limit);
 }
 
-export async function getOpportunitiesForMap(): Promise<Property[]> {
-  if (await hasRealData()) {
-    return fetchOpportunitiesForMap();
+export async function getOpportunitiesForMap(): Promise<{
+  properties: Property[];
+  withoutGeo: number;
+}> {
+  try {
+    const [properties, withoutGeo] = await Promise.all([
+      fetchOpportunitiesForMap(),
+      fetchOpportunitiesWithoutGeo(),
+    ]);
+    return { properties, withoutGeo };
+  } catch {
+    return { properties: [], withoutGeo: 0 };
   }
-  return propertiesMock;
 }
 
 export async function getSourceDistribution(): Promise<Array<{ source: string; count: number }>> {
-  if (await hasRealData()) {
-    return fetchSourceDistribution();
+  try {
+    return await fetchSourceDistribution();
+  } catch {
+    return [];
   }
-  const byKey = new Map<string, number>();
-  for (const p of propertiesMock) byKey.set(p.source, (byKey.get(p.source) ?? 0) + 1);
-  return Array.from(byKey.entries())
-    .map(([source, count]) => ({ source, count }))
-    .sort((a, b) => b.count - a.count);
 }
 
 export async function getBucketDistribution(): Promise<{
@@ -142,19 +122,18 @@ export async function getBucketDistribution(): Promise<{
   withRedFlags: number;
   highScore: number;
 }> {
-  if (await hasRealData()) {
-    return fetchBucketDistribution();
+  try {
+    return await fetchBucketDistribution();
+  } catch {
+    return {
+      auctions: 0,
+      bankOwned: 0,
+      needsReform: 0,
+      withTerrace: 0,
+      withRedFlags: 0,
+      highScore: 0,
+    };
   }
-  return {
-    auctions: propertiesMock.filter((p) => p.source === 'boe').length,
-    bankOwned: propertiesMock.filter((p) =>
-      ['sareb', 'aliseda', 'solvia', 'haya', 'casaktua', 'anida'].includes(p.source),
-    ).length,
-    needsReform: 0,
-    withTerrace: 0,
-    withRedFlags: 0,
-    highScore: propertiesMock.filter((p) => p.opportunityScore >= 60).length,
-  };
 }
 
 export async function getOpportunityStats(): Promise<{
@@ -163,22 +142,15 @@ export async function getOpportunityStats(): Promise<{
   highScore: number;
   avgScore: number;
 }> {
-  if (await hasRealData()) {
-    return fetchOpportunityStats();
+  try {
+    return await fetchOpportunityStats();
+  } catch {
+    return { total: 0, newToday: 0, highScore: 0, avgScore: 0 };
   }
-  const items = propertiesMock;
-  const oneDayAgo = Date.now() - 86_400_000;
-  const newToday = items.filter((p) => p.firstSeen.getTime() > oneDayAgo).length;
-  const highScore = items.filter((p) => p.opportunityScore >= 80).length;
-  const avgScore =
-    items.length === 0
-      ? 0
-      : Math.round(items.reduce((acc, p) => acc + p.opportunityScore, 0) / items.length);
-  return { total: items.length, newToday, highScore, avgScore };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Zones / Captures / Listings — siguen con mocks hasta Fase 3-4
+// Zones / Captures / Listings — vacío hasta Fase 3-5
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getZones(): Promise<Zone[]> {
@@ -194,15 +166,7 @@ export async function getCaptures(): Promise<Capture[]> {
 }
 
 export async function getCapturesByStatus(): Promise<Record<CaptureStatus, Capture[]>> {
-  const grouped: Record<CaptureStatus, Capture[]> = {
-    new: [],
-    contacted: [],
-    meeting: [],
-    signed: [],
-    lost: [],
-  };
-  for (const c of capturesMock) grouped[c.status].push(c);
-  return grouped;
+  return { new: [], contacted: [], meeting: [], signed: [], lost: [] };
 }
 
 export async function getCaptureStats(): Promise<{
@@ -211,11 +175,7 @@ export async function getCaptureStats(): Promise<{
   signed: number;
   signedValue: number;
 }> {
-  const total = capturesMock.length;
-  const signedItems = capturesMock.filter((c) => c.status === 'signed');
-  const signedValue = signedItems.reduce((acc, c) => acc + (c.dealValue ?? 0), 0);
-  const active = capturesMock.filter((c) => c.status !== 'signed' && c.status !== 'lost').length;
-  return { total, active, signed: signedItems.length, signedValue };
+  return { total: 0, active: 0, signed: 0, signedValue: 0 };
 }
 
 export async function getListings(): Promise<Listing[]> {
@@ -237,9 +197,5 @@ export async function getListingStats(): Promise<{
   views: number;
   leads: number;
 }> {
-  const total = listingsMock.length;
-  const live = listingsMock.filter((l) => l.status === 'live').length;
-  const views = listingsMock.reduce((acc, l) => acc + l.viewsCount, 0);
-  const leads = listingsMock.reduce((acc, l) => acc + l.leadsCount, 0);
-  return { total, live, views, leads };
+  return { total: 0, live: 0, views: 0, leads: 0 };
 }

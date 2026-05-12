@@ -1,9 +1,13 @@
 // Adaptador entre el cliente Prisma (@lince/db) y los tipos de UI.
-// Calcula zoneAvgPricePerM2 (mediana por CP en una sola query) y opportunityScore
-// heurístico hasta que el agente Pulse (Fase 4) lo reemplace por uno real.
 //
-// La UI espera campos non-null en Property; aplicamos fallbacks razonables para
-// los huecos del scraping (address, m², lat/lng, etc.).
+// Política de honestidad (regla número 1 del producto):
+//   - Si un dato no es real en la fuente, devolvemos `null`. Nunca inventamos.
+//   - NO usamos centroide CP como fallback de lat/lng — un punto en el mapa
+//     debe ser DONDE ESTÁ el inmueble.
+//   - El score solo se calcula cuando hay muestra de zona suficiente (≥3
+//     propiedades en el mismo CP, excluyendo subastas). Si no, null.
+//   - El type, source y city tampoco tienen fallback inventado. Si no se
+//     puede determinar, viene como null y la UI muestra `—`.
 
 import { prisma, Prisma, type Property as PrismaProperty } from '@lince/db';
 import type { PriceHistoryEntry, Property, PropertySource, PropertyType } from './types';
@@ -21,6 +25,20 @@ const VALID_SOURCES: PropertySource[] = [
   'casaktua',
   'anida',
 ];
+
+const SOURCE_LABELS: Record<PropertySource, string> = {
+  idealista: 'Idealista',
+  fotocasa: 'Fotocasa',
+  habitaclia: 'Habitaclia',
+  pisos: 'Pisos.com',
+  boe: 'BOE Subastas',
+  sareb: 'SAREB',
+  aliseda: 'Aliseda',
+  solvia: 'Solvia',
+  haya: 'Haya',
+  casaktua: 'Casaktua',
+  anida: 'Anida',
+};
 
 const VALID_TYPES: PropertyType[] = ['piso', 'casa', 'atico', 'duplex', 'local', 'terreno'];
 
@@ -43,153 +61,144 @@ const TYPE_ALIASES: Record<string, PropertyType> = {
   terreno: 'terreno',
   suelo: 'terreno',
   finca: 'terreno',
-  garaje: 'local', // mapeo aproximado; los garajes no tienen tipo propio en UI
+  garaje: 'local',
   trastero: 'local',
 };
 
-// Centroides aproximados por CP (BCN ciudad + Maresme + Costa Brava).
-// Se usan como fallback cuando lat/lng no están en la fuente.
-// Coordenadas redondeadas a 4 decimales (~10m de precisión).
-const CP_CENTROIDS: Record<string, [number, number]> = {
-  '08001': [41.3804, 2.1707],
-  '08002': [41.3819, 2.1764],
-  '08003': [41.3851, 2.1825],
-  '08004': [41.3756, 2.1638],
-  '08005': [41.3998, 2.2024],
-  '08008': [41.3946, 2.158],
-  '08010': [41.3925, 2.1764],
-  '08011': [41.3796, 2.1576],
-  '08015': [41.3791, 2.1567],
-  '08018': [41.4012, 2.1995],
-  '08019': [41.4083, 2.2069],
-  '08025': [41.4118, 2.1666],
-  '08026': [41.4116, 2.1798],
-  '08028': [41.3811, 2.1187],
-  '08030': [41.4346, 2.1855],
-  '08036': [41.3873, 2.1474],
-  '08038': [41.3645, 2.1346],
-  '08172': [41.4729, 2.0843], // Sant Cugat
-  '08181': [41.6079, 2.1404], // Sentmenat
-  '08211': [41.6178, 2.0863], // Castellar del Vallès
-  '08301': [41.5365, 2.4452], // Mataró
-  '08530': [41.7256, 2.2832], // La Garriga
-  '08700': [41.5781, 1.6175], // Igualada
-  '08901': [41.359, 2.0995], // L'Hospitalet
-  '08911': [41.4501, 2.2474], // Badalona
-};
-
-function fallbackCoord(postalCode: string | null): [number, number] {
-  if (postalCode && CP_CENTROIDS[postalCode]) return CP_CENTROIDS[postalCode];
-  return [41.3851, 2.1734]; // Plaça Catalunya por defecto
-}
+const MIN_ZONE_SAMPLE = 3; // mínimo de propiedades en CP para considerar la media como referencia
 
 function clampScore(n: number): number {
   return Math.max(0, Math.min(100, Math.round(n)));
 }
 
-function mapType(raw: string | null): PropertyType {
-  if (!raw) return 'piso';
+function mapType(raw: string | null): PropertyType | null {
+  if (!raw) return null;
   const key = raw.toLowerCase().trim();
   if (TYPE_ALIASES[key]) return TYPE_ALIASES[key];
   if (VALID_TYPES.includes(key as PropertyType)) return key as PropertyType;
-  return 'piso';
+  return null;
 }
 
-function mapSource(raw: string): PropertySource {
-  return VALID_SOURCES.includes(raw as PropertySource) ? (raw as PropertySource) : 'idealista';
+function mapSource(raw: string): { source: PropertySource; label: string } {
+  if (VALID_SOURCES.includes(raw as PropertySource)) {
+    const src = raw as PropertySource;
+    return { source: src, label: SOURCE_LABELS[src] };
+  }
+  // Fuente desconocida: la marcamos pero no inventamos un nombre familiar.
+  return { source: raw as PropertySource, label: raw };
+}
+
+function mapStatus(raw: string | null): Property['status'] {
+  if (!raw) return null;
+  const r = raw.toLowerCase();
+  if (r === 'active') return 'active';
+  if (r === 'auction') return 'auction';
+  if (r === 'sold') return 'sold';
+  if (r === 'withdrawn') return 'withdrawn';
+  return null;
 }
 
 /**
- * Calcula mediana de €/m² por CP usando la DB.
- * Devuelve un mapa { '08003': 5400, ... } con la media (no mediana real para
- * simplicidad; PostgreSQL `PERCENTILE_CONT` daría mediana pero el cap de
- * datos actual es bajo). Mejorable cuando haya más volumen.
+ * Devuelve, para cada CP en la DB, { avgEurM2, count }. Solo considera CPs
+ * con al menos MIN_ZONE_SAMPLE propiedades (estadísticamente significativo).
+ * Excluye subastas para no sesgar a la baja.
  */
-async function getZoneAvgByCp(): Promise<Map<string, number>> {
-  const rows = await prisma.$queryRawUnsafe<Array<{ postal_code: string; avg_eur_m2: number }>>(`
+async function getZoneStatsByCp(): Promise<Map<string, { avgEurM2: number; count: number }>> {
+  const rows = await prisma.$queryRawUnsafe<
+    Array<{ postal_code: string; avg_eur_m2: number; n: bigint }>
+  >(`
     SELECT postal_code,
-           AVG(price_per_m2)::float AS avg_eur_m2
+           AVG(price_per_m2)::float AS avg_eur_m2,
+           COUNT(*)::bigint AS n
     FROM properties
     WHERE postal_code IS NOT NULL
       AND price_per_m2 IS NOT NULL
-      AND is_auction = false  -- excluir subastas del cálculo (precios bajos sesgan)
+      AND is_auction = false
     GROUP BY postal_code
   `);
-  const map = new Map<string, number>();
+  const map = new Map<string, { avgEurM2: number; count: number }>();
   for (const r of rows) {
+    const n = Number(r.n);
     if (r.avg_eur_m2 > 500 && r.avg_eur_m2 < 20_000) {
-      map.set(r.postal_code, Math.round(r.avg_eur_m2));
+      map.set(r.postal_code, { avgEurM2: Math.round(r.avg_eur_m2), count: n });
     }
   }
   return map;
 }
 
-/** Heurística de score: cuanto más por debajo de la mediana, mayor el score. */
+/** Score heurístico: cuanto más por debajo de la mediana, mayor el score. */
 function computeScore(pricePerM2: number, zoneAvg: number, isAuction: boolean): number {
   if (zoneAvg <= 0) return 0;
   const delta = (zoneAvg - pricePerM2) / zoneAvg;
   let score = clampScore(delta * 200);
-  // Bonus por subasta (Bucket B inherente)
   if (isAuction) score = clampScore(score + 15);
   return score;
 }
 
-/** Adaptador Prisma Property → UI Property con todos los fallbacks aplicados. */
-function adapt(row: PrismaProperty, zoneAvgByCp: Map<string, number>): Property {
-  const postalCode = row.postalCode ?? '00000';
-  const pricePerM2 = row.pricePerM2 ? Number(row.pricePerM2) : 0;
-  const price = row.price ? Number(row.price) : 0;
-  const zoneAvg = zoneAvgByCp.get(postalCode) ?? pricePerM2;
+/** Adaptador honesto Prisma → UI. */
+function adapt(
+  row: PrismaProperty,
+  zoneStatsByCp: Map<string, { avgEurM2: number; count: number }>,
+): Property {
+  const { source, label } = mapSource(row.source);
+  const pricePerM2 = row.pricePerM2 ? Number(row.pricePerM2) : null;
+  const price = row.price ? Number(row.price) : null;
   const isAuction = row.isAuction === true;
-  const score = pricePerM2 > 0 ? computeScore(pricePerM2, zoneAvg, isAuction) : 0;
-  const [lat, lng] = row.lat && row.lng ? [row.lat, row.lng] : fallbackCoord(postalCode);
+  const postalCode = row.postalCode ?? null;
+
+  // Zona: solo si hay muestra suficiente
+  const zoneStat = postalCode ? zoneStatsByCp.get(postalCode) : undefined;
+  const zoneAvgPricePerM2 =
+    zoneStat && zoneStat.count >= MIN_ZONE_SAMPLE ? zoneStat.avgEurM2 : null;
+  const zoneSampleSize = zoneStat?.count ?? 0;
+
+  const zoneDeltaPct =
+    pricePerM2 !== null && zoneAvgPricePerM2 !== null && zoneAvgPricePerM2 > 0
+      ? (zoneAvgPricePerM2 - pricePerM2) / zoneAvgPricePerM2
+      : null;
+
+  const opportunityScore =
+    pricePerM2 !== null && zoneAvgPricePerM2 !== null
+      ? computeScore(pricePerM2, zoneAvgPricePerM2, isAuction)
+      : null;
 
   return {
     id: row.id,
-    source: mapSource(row.source),
+    source,
+    sourceLabel: label,
     sourceId: row.sourceId,
     sourceUrl: row.sourceUrl,
     type: mapType(row.type),
-    address: row.address ?? 'Sin dirección',
-    city: row.city ?? deriveCityFromCp(postalCode),
+    address: row.address,
+    city: row.city,
     postalCode,
-    province: row.province ?? 'Barcelona',
-    lat,
-    lng,
+    province: row.province,
+    lat: row.lat, // null si la fuente no la expuso — NO inventamos
+    lng: row.lng,
     cadastralRef: row.cadastralRef,
-    m2: row.m2 ?? 0,
-    rooms: row.rooms ?? 0,
-    bathrooms: row.bathrooms ?? 0,
+    m2: row.m2,
+    rooms: row.rooms,
+    bathrooms: row.bathrooms,
     yearBuilt: row.yearBuilt,
     price,
     pricePerM2,
-    zoneAvgPricePerM2: zoneAvg,
-    opportunityScore: score,
-    status: 'active',
-    description: row.description ?? '',
+    zoneAvgPricePerM2,
+    zoneSampleSize,
+    zoneDeltaPct,
+    opportunityScore,
+    status: mapStatus(row.status),
+    isAuction,
+    isBankOwned: row.isBankOwned === true,
+    condition: row.condition,
+    hasTerrace: row.hasTerrace,
+    hasElevator: row.hasElevator,
+    floor: row.floor,
+    orientation: row.orientation,
+    redFlags: row.redFlags ?? [],
+    description: row.description,
     firstSeen: row.firstSeen,
     lastSeen: row.lastSeen,
   };
-}
-
-function deriveCityFromCp(cp: string): string {
-  // Catálogo mínimo para los CPs que tocamos en sprint 1
-  const CITIES: Record<string, string> = {
-    '08901': "L'Hospitalet de Llobregat",
-    '08911': 'Badalona',
-    '08172': 'Sant Cugat del Vallès',
-    '08181': 'Sentmenat',
-    '08211': 'Castellar del Vallès',
-    '08301': 'Mataró',
-    '08530': 'La Garriga',
-    '08700': 'Igualada',
-  };
-  if (CITIES[cp]) return CITIES[cp];
-  if (cp.startsWith('08')) return 'Barcelona';
-  if (cp.startsWith('17')) return 'Girona';
-  if (cp.startsWith('25')) return 'Lleida';
-  if (cp.startsWith('43')) return 'Tarragona';
-  return '—';
 }
 
 // ----- Public queries -----
@@ -204,7 +213,7 @@ export interface DbOpportunityFilters {
 }
 
 export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Promise<Property[]> {
-  const zoneAvgByCp = await getZoneAvgByCp();
+  const zoneStatsByCp = await getZoneStatsByCp();
 
   const where: Prisma.PropertyWhereInput = {};
 
@@ -232,27 +241,31 @@ export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Pr
     take: 500,
   });
 
-  let adapted = rows.map((r) => adapt(r, zoneAvgByCp));
+  let adapted = rows.map((r) => adapt(r, zoneStatsByCp));
 
   if (filters.types && filters.types.length > 0) {
     const setT = new Set(filters.types);
-    adapted = adapted.filter((p) => setT.has(p.type));
+    adapted = adapted.filter((p) => p.type !== null && setT.has(p.type));
   }
   if (filters.minScore !== undefined) {
     const min = filters.minScore;
-    adapted = adapted.filter((p) => p.opportunityScore >= min);
+    adapted = adapted.filter((p) => p.opportunityScore !== null && p.opportunityScore >= min);
   }
 
-  return adapted.sort((a, b) => b.opportunityScore - a.opportunityScore);
+  // Orden: primero los que tienen score calculado (desc), luego los sin score.
+  return adapted.sort((a, b) => {
+    const aScore = a.opportunityScore ?? -1;
+    const bScore = b.opportunityScore ?? -1;
+    return bScore - aScore;
+  });
 }
 
 export async function fetchPropertyById(id: string): Promise<Property | null> {
-  const zoneAvgByCp = await getZoneAvgByCp();
+  const zoneStatsByCp = await getZoneStatsByCp();
   const row = await prisma.property.findUnique({ where: { id } });
-  return row ? adapt(row, zoneAvgByCp) : null;
+  return row ? adapt(row, zoneStatsByCp) : null;
 }
 
-/** Histórico de cambios de precio de una propiedad, en orden cronológico. */
 export async function fetchPropertyHistory(propertyId: string): Promise<PriceHistoryEntry[]> {
   const rows = await prisma.priceHistory.findMany({
     where: { propertyId },
@@ -280,7 +293,6 @@ export async function fetchSourceDistribution(): Promise<Array<{ source: string;
   return rows.map((r) => ({ source: r.source, count: Number(r.n) }));
 }
 
-/** Distribución por bucket de oportunidad (para el dashboard home). */
 export async function fetchBucketDistribution(): Promise<{
   auctions: number;
   bankOwned: number;
@@ -300,16 +312,23 @@ export async function fetchBucketDistribution(): Promise<{
   );
   const withRedFlags = Number(redFlagsRows[0]?.n ?? 0n);
 
-  // High-score: score >= 60 (heurística)
   const all = await fetchOpportunities();
-  const highScore = all.filter((p) => p.opportunityScore >= 60).length;
+  const highScore = all.filter(
+    (p) => p.opportunityScore !== null && p.opportunityScore >= 60,
+  ).length;
 
   return { auctions, bankOwned, needsReform, withTerrace, withRedFlags, highScore };
 }
 
-/** Propiedades con coordenadas (real o fallback CP) para el mapa. */
+/** Propiedades CON coordenadas reales (las que no las tienen no van al mapa). */
 export async function fetchOpportunitiesForMap(): Promise<Property[]> {
-  return fetchOpportunities();
+  const all = await fetchOpportunities();
+  return all.filter((p) => p.lat !== null && p.lng !== null);
+}
+
+/** Conteo de propiedades SIN geolocalización (para mostrar en leyenda del mapa). */
+export async function fetchOpportunitiesWithoutGeo(): Promise<number> {
+  return prisma.property.count({ where: { OR: [{ lat: null }, { lng: null }] } });
 }
 
 export async function fetchOpportunityStats(): Promise<{
@@ -326,18 +345,16 @@ export async function fetchOpportunityStats(): Promise<{
     where: { firstSeen: { gte: oneDayAgo } },
   });
 
-  // Computar score sobre todas las propiedades (cap razonable)
-  const zoneAvgByCp = await getZoneAvgByCp();
-  const rows = await prisma.property.findMany({ take: 2000 });
-  const scores = rows.map((r) => {
-    const cp = r.postalCode ?? '00000';
-    const ppm = r.pricePerM2 ? Number(r.pricePerM2) : 0;
-    const zoneAvg = zoneAvgByCp.get(cp) ?? ppm;
-    return ppm > 0 ? computeScore(ppm, zoneAvg, r.isAuction === true) : 0;
-  });
-  const highScore = scores.filter((s) => s >= 80).length;
+  // Solo computamos score sobre propiedades con datos completos.
+  const all = await fetchOpportunities();
+  const scored = all.filter((p) => p.opportunityScore !== null) as Array<
+    Property & { opportunityScore: number }
+  >;
+  const highScore = scored.filter((p) => p.opportunityScore >= 80).length;
   const avgScore =
-    scores.length === 0 ? 0 : Math.round(scores.reduce((acc, s) => acc + s, 0) / scores.length);
+    scored.length === 0
+      ? 0
+      : Math.round(scored.reduce((acc, p) => acc + p.opportunityScore, 0) / scored.length);
 
   return { total, newToday, highScore, avgScore };
 }

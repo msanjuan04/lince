@@ -92,10 +92,7 @@ export default async function DashboardPage() {
 
           <div className="border-border border-t">
             {top.map((p, i) => {
-              const discountPct =
-                p.zoneAvgPricePerM2 > 0
-                  ? (p.zoneAvgPricePerM2 - p.pricePerM2) / p.zoneAvgPricePerM2
-                  : 0;
+              const discountPct = p.zoneDeltaPct;
               return (
                 <Link
                   key={p.id}
@@ -106,37 +103,44 @@ export default async function DashboardPage() {
                     <span className="text-muted-foreground w-6 shrink-0 text-xs tabular-nums">
                       {String(i + 1).padStart(2, '0')}
                     </span>
-                    <ScoreBadge score={p.opportunityScore} size="md" />
+                    {p.opportunityScore !== null ? (
+                      <ScoreBadge score={p.opportunityScore} size="md" />
+                    ) : (
+                      <span className="text-muted-foreground/60 w-12 text-xs">N/A</span>
+                    )}
                     <div className="flex min-w-0 flex-col gap-0.5">
-                      <span className="line-clamp-1 text-sm font-medium">{p.address}</span>
+                      <span className="line-clamp-1 text-sm font-medium">{p.address ?? '—'}</span>
                       <span className="text-muted-foreground text-xs">
-                        {p.city} · CP {p.postalCode} · {propertyTypeLabel(p.type)}
-                        {p.m2 > 0 ? <span> · {p.m2} m²</span> : null}
+                        {p.city ?? '—'}
+                        {p.postalCode ? ` · CP ${p.postalCode}` : ''}
+                        {p.type ? ` · ${propertyTypeLabel(p.type)}` : ''}
+                        {p.m2 !== null && p.m2 > 0 ? <span> · {p.m2} m²</span> : null}
                       </span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-6 sm:justify-end">
                     <div className="flex flex-col items-end gap-0.5">
                       <span className="text-sm font-medium tabular-nums">
-                        {formatEuros(p.price)}
+                        {p.price !== null ? formatEuros(p.price) : '—'}
                       </span>
                       <span className="text-muted-foreground text-xs tabular-nums">
-                        {formatPricePerM2(p.pricePerM2)}
+                        {p.pricePerM2 !== null ? formatPricePerM2(p.pricePerM2) : '—'}
                       </span>
                     </div>
                     <div className="flex w-20 flex-col items-end gap-0.5">
                       <span
                         className={cn(
                           'text-sm font-medium tabular-nums',
-                          discountPct >= 0.2
+                          discountPct !== null && discountPct >= 0.2
                             ? 'text-highlight'
-                            : discountPct >= 0
+                            : discountPct !== null && discountPct >= 0
                               ? 'text-foreground'
                               : 'text-muted-foreground',
                         )}
                       >
-                        {discountPct >= 0 ? '−' : '+'}
-                        {Math.abs(Math.round(discountPct * 100))}%
+                        {discountPct === null
+                          ? '—'
+                          : `${discountPct >= 0 ? '−' : '+'}${Math.abs(Math.round(discountPct * 100))}%`}
                       </span>
                       <span className="text-muted-foreground text-[10px]">vs zona</span>
                     </div>
