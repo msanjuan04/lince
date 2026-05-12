@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import type { PriceHistoryEntry, Property } from '@/lib/data/types';
 import type { PropertyTrack } from '@/lib/data/tracking';
 import { captureProperty } from '../_actions';
+import { FinancialAnalysisSection } from './FinancialAnalysisSection';
 import { PriceHistorySection } from './PriceHistorySection';
 import { TrackingSection } from './TrackingSection';
 
@@ -190,6 +191,12 @@ function Body({
               fiable. El análisis comparativo se activa con al menos 3 propiedades en la zona.
             </p>
           )}
+        </Section>
+
+        <Separator />
+
+        <Section title="Análisis financiero">
+          <FinancialAnalysisSection property={property} />
         </Section>
 
         <Separator />
