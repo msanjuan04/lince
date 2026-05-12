@@ -296,6 +296,7 @@ function Body({
         {hasSourceUrl ? (
           <Button
             render={<a href={property.sourceUrl!} target="_blank" rel="noopener noreferrer" />}
+            nativeButton={false}
             variant="outline"
             size="sm"
             className="flex-1"

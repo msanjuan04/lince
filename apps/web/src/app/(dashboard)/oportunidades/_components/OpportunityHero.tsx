@@ -1,11 +1,11 @@
 'use client';
 
 import { ArrowUpRight } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ScoreBadge } from '@/components/shared/ScoreBadge';
 import { SourceBadge } from '@/components/shared/SourceBadge';
 import { propertyTypeLabel } from '@/components/shared/PropertyTypeLabel';
-import { Button } from '@/components/ui/button';
 import { formatEuros, formatM2, formatPricePerM2, formatRelativeDate } from '@/lib/format';
 import type { Property } from '@/lib/data/types';
 
@@ -14,15 +14,12 @@ interface OpportunityHeroProps {
 }
 
 export function OpportunityHero({ property }: OpportunityHeroProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const discountPct = property.zoneDeltaPct;
 
-  function open() {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('selected', property.id);
-    router.push(`/oportunidades?${params.toString()}`, { scroll: false });
-  }
+  const params = new URLSearchParams(searchParams.toString());
+  params.set('selected', property.id);
+  const href = `/oportunidades?${params.toString()}`;
 
   return (
     <section className="border-foreground border-t pt-6">
@@ -32,9 +29,9 @@ export function OpportunityHero({ property }: OpportunityHeroProps) {
           {formatRelativeDate(property.firstSeen)}
         </span>
       </div>
-      <button
-        type="button"
-        onClick={open}
+      <Link
+        href={href}
+        scroll={false}
         className="hover:bg-accent/40 group -mx-2 grid w-[calc(100%+1rem)] grid-cols-1 items-end gap-6 rounded-sm px-2 py-4 text-left transition-colors lg:grid-cols-[2fr_1fr_1fr_auto]"
       >
         <div className="flex flex-col gap-2">
@@ -108,12 +105,12 @@ export function OpportunityHero({ property }: OpportunityHeroProps) {
         </div>
 
         <div className="hidden lg:block">
-          <Button variant="outline" size="sm" className="gap-1.5">
+          <span className="border-border bg-background hover:bg-muted inline-flex h-7 items-center gap-1.5 rounded-[min(var(--radius-md),12px)] border px-2.5 text-[0.8rem] font-medium transition-colors">
             Ver detalle
             <ArrowUpRight className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-          </Button>
+          </span>
         </div>
-      </button>
+      </Link>
     </section>
   );
 }

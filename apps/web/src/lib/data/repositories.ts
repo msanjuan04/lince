@@ -60,7 +60,10 @@ export async function getOpportunities(filters: OpportunityFilters = {}): Promis
   try {
     return await fetchOpportunities(filters as DbOpportunityFilters);
   } catch (err) {
-    console.warn('[repositories] getOpportunities falló:', err);
+    console.error(
+      '[repositories] getOpportunities — fallo conectando a DB. Revisa DATABASE_URL/DIRECT_URL en .env.local y reinicia el dev:',
+      err,
+    );
     return [];
   }
 }
@@ -69,7 +72,7 @@ export async function getPropertyById(id: string): Promise<Property | null> {
   try {
     return await fetchPropertyById(id);
   } catch (err) {
-    console.warn('[repositories] getPropertyById falló:', err);
+    console.error('[repositories] getPropertyById falló:', err);
     return null;
   }
 }
@@ -78,7 +81,7 @@ export async function getPropertyHistory(id: string): Promise<PriceHistoryEntry[
   try {
     return await fetchPropertyHistory(id);
   } catch (err) {
-    console.warn('[repositories] getPropertyHistory falló:', err);
+    console.error('[repositories] getPropertyHistory falló:', err);
     return [];
   }
 }
@@ -86,7 +89,11 @@ export async function getPropertyHistory(id: string): Promise<PriceHistoryEntry[
 export async function getTopOpportunities(limit = 5): Promise<Property[]> {
   try {
     return await fetchTopOpportunities(limit);
-  } catch {
+  } catch (err) {
+    console.error(
+      '[repositories] falló contra DB — revisa DATABASE_URL/DIRECT_URL en .env.local y reinicia el dev:',
+      err,
+    );
     return [];
   }
 }
@@ -109,7 +116,11 @@ export async function getOpportunitiesForMap(): Promise<{
 export async function getSourceDistribution(): Promise<Array<{ source: string; count: number }>> {
   try {
     return await fetchSourceDistribution();
-  } catch {
+  } catch (err) {
+    console.error(
+      '[repositories] falló contra DB — revisa DATABASE_URL/DIRECT_URL en .env.local y reinicia el dev:',
+      err,
+    );
     return [];
   }
 }
