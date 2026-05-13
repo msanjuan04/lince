@@ -10,9 +10,18 @@
   },
   "scripts": {
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pulse:probe": "tsx scripts/probe-pulse-report.ts",
+    "pulse:dispatch": "tsx scripts/dispatch-pulse-telegram.ts",
+    "telegram:list-chats": "tsx scripts/telegram-list-chats.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "@lince/db": "workspace:*",
+    "@lince/notifier": "workspace:*"
   },
   "devDependencies": {
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }
 }

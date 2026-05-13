@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { trackingRepo, type PropertyTrackStatus } from '@lince/db';
-import { DEMO_AGENCY_ID } from '@/lib/data/mocks/agency';
+import { getCurrentAgencyId } from '@/lib/data/repositories';
 
 export interface CapturePropertyResult {
   ok: boolean;
@@ -18,8 +18,9 @@ export interface CapturePropertyResult {
 export async function captureProperty(propertyId: string): Promise<CapturePropertyResult> {
   if (!propertyId) return { ok: false, error: 'Propiedad sin identificar' };
   try {
+    const agencyId = await getCurrentAgencyId();
     await trackingRepo.upsertTrack({
-      agencyId: DEMO_AGENCY_ID,
+      agencyId,
       propertyId,
       status: 'watching',
     });
@@ -74,8 +75,9 @@ export async function updateTrackAction(
     // Si pasa a 'contacted' por primera vez, registramos contactedAt.
     // Si pasa a 'viewed', viewedAt.
     const now = new Date();
+    const agencyId = await getCurrentAgencyId();
     await trackingRepo.upsertTrack({
-      agencyId: DEMO_AGENCY_ID,
+      agencyId,
       propertyId: data.propertyId,
       status: data.status as PropertyTrackStatus | undefined,
       notes: data.notes ?? undefined,
@@ -93,7 +95,8 @@ export async function updateTrackAction(
 
 export async function removeTrackAction(propertyId: string): Promise<UpdateTrackResult> {
   try {
-    await trackingRepo.removeTrack(DEMO_AGENCY_ID, propertyId);
+    const agencyId = await getCurrentAgencyId();
+    await trackingRepo.removeTrack(agencyId, propertyId);
     revalidatePath('/oportunidades');
     revalidatePath('/seguimiento');
     return { ok: true };

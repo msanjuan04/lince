@@ -136,13 +136,15 @@ export default async function ConfiguracionPage() {
                       <div className="flex items-center gap-3">
                         <Avatar className="size-7 rounded-sm">
                           <AvatarFallback className="bg-muted text-foreground rounded-sm text-xs font-medium">
-                            {initials(m.user.name, m.user.email)}
+                            {initials(m.user.name, m.user.email ?? m.user.phoneE164 ?? 'LI')}
                           </AvatarFallback>
                         </Avatar>
                         <span className="font-medium">{m.user.name ?? '—'}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{m.user.email}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {m.user.email ?? (m.user.phoneE164 ? `+${m.user.phoneE164}` : '—')}
+                    </TableCell>
                     <TableCell>
                       <StatusDot
                         label={ROLE_LABEL[m.role]}

@@ -6,7 +6,7 @@ import { StatusDot } from '@/components/shared/StatusDot';
 import { SourceBadge } from '@/components/shared/SourceBadge';
 import { propertyTypeLabel } from '@/components/shared/PropertyTypeLabel';
 import { formatEuros, formatPricePerM2, formatRelativeDate } from '@/lib/format';
-import { getOpportunities } from '@/lib/data/repositories';
+import { getOpportunities, getCurrentAgencyId } from '@/lib/data/repositories';
 import {
   TRACK_STATUS_LABEL,
   TRACK_STATUS_TONE,
@@ -14,7 +14,6 @@ import {
   type PropertyTrackStatus,
 } from '@/lib/data/tracking';
 import { trackingRepo } from '@lince/db';
-import { DEMO_AGENCY_ID } from '@/lib/data/mocks/agency';
 import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = {
@@ -32,11 +31,13 @@ const STATUS_ORDER: PropertyTrackStatus[] = [
 ];
 
 export default async function SeguimientoPage() {
+  const agencyId = await getCurrentAgencyId();
   const allOpps = await getOpportunities();
   const tracks = await getTracksMap(allOpps.map((p) => p.id));
-  const counts = (await trackingRepo
-    .getTrackStatusCounts(DEMO_AGENCY_ID)
-    .catch(() => ({}))) as Record<string, number>;
+  const counts = (await trackingRepo.getTrackStatusCounts(agencyId).catch(() => ({}))) as Record<
+    string,
+    number
+  >;
 
   const tracked = allOpps
     .filter((p) => tracks.has(p.id))

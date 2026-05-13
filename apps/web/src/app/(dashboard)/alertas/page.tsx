@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Topbar } from '@/components/nav/Topbar';
 import { StatCard } from '@/components/shared/StatCard';
 import { zoneAlertsRepo } from '@lince/db';
-import { DEMO_AGENCY_ID } from '@/lib/data/mocks/agency';
+import { getCurrentAgencyId } from '@/lib/data/repositories';
 import { AlertRow, type AlertRowProps } from './_components/AlertRow';
 
 export const metadata: Metadata = {
@@ -10,9 +10,10 @@ export const metadata: Metadata = {
 };
 
 export default async function AlertasPage() {
+  const agencyId = await getCurrentAgencyId();
   const [alerts, counts] = await Promise.all([
-    zoneAlertsRepo.listAlertsForAgency(DEMO_AGENCY_ID, 200).catch(() => []),
-    zoneAlertsRepo.getAlertStatusCounts(DEMO_AGENCY_ID).catch(() => ({}) as Record<string, number>),
+    zoneAlertsRepo.listAlertsForAgency(agencyId, 200).catch(() => []),
+    zoneAlertsRepo.getAlertStatusCounts(agencyId).catch(() => ({}) as Record<string, number>),
   ]);
 
   const total = alerts.length;

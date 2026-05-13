@@ -19,7 +19,7 @@ import { StatusDot } from '@/components/shared/StatusDot';
 import { formatEuros, formatM2, formatPricePerM2, formatRelativeDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { PriceHistoryEntry, Property } from '@/lib/data/types';
-import type { PropertyTrack } from '@/lib/data/tracking';
+import type { PropertyTrack } from '@/lib/data/tracking-types';
 import { captureProperty } from '../_actions';
 import { FinancialAnalysisSection } from './FinancialAnalysisSection';
 import { PriceHistorySection } from './PriceHistorySection';

@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useTransition } from 'react';
 import type { PriceHistoryEntry, Property } from '@/lib/data/types';
-import type { PropertyTrack } from '@/lib/data/tracking';
+import type { PropertyTrack } from '@/lib/data/tracking-types';
 import { OpportunityFilters } from './OpportunityFilters';
 import { OpportunityTable } from './OpportunityTable';
 import { OpportunityDetailSheet } from './OpportunityDetailSheet';

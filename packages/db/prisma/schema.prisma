@@ -22,6 +22,13 @@ enum AgencyPlan {
   founder
 }
 
+enum PulseRole {
+  inmobiliaria
+  buying_agent
+  inversor_directo
+  flipper
+}
+
 enum AgencyMemberRole {
   owner
   agent
@@ -59,6 +66,7 @@ model Agency {
   id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String
   plan      AgencyPlan
+  pulseRole PulseRole? @map("pulse_role")
   active    Boolean    @default(true)
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz()
 
@@ -73,10 +81,25 @@ model Agency {
 }
 
 model User {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Opcional desde el flujo phone-only — se rellena si más adelante el user añade email.
+  email           String?  @unique
+  /// E.164 sin '+', p.ej. "34666123456". Es el identificador principal del usuario.
+  phoneE164       String?  @unique @map("phone_e164")
+  name            String?
+  /// Vincula nuestro perfil con la fila correspondiente en `auth.users` de Supabase.
+  supabaseUserId  String?  @unique @map("supabase_user_id") @db.Uuid
+
+  /// Hash HMAC-SHA256 del último OTP enviado. Null tras consumir o expirar.
+  whatsappOtpHash        String?   @map("whatsapp_otp_hash")
+  whatsappOtpExpiresAt   DateTime? @map("whatsapp_otp_expires_at") @db.Timestamptz()
+  whatsappOtpAttempts    Int       @default(0) @map("whatsapp_otp_attempts")
+  /// Timestamp del último envío — usado para rate-limit (max 1 OTP/min, 3/hora).
+  whatsappOtpSentAt      DateTime? @map("whatsapp_otp_sent_at") @db.Timestamptz()
+  /// Marca el momento en que el usuario verificó su móvil. Sin esto, no puede entrar.
+  whatsappVerifiedAt     DateTime? @map("whatsapp_verified_at") @db.Timestamptz()
+
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   memberships AgencyMember[]
 

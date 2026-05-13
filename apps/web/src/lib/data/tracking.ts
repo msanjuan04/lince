@@ -1,49 +1,17 @@
-// Tipos y helpers de tracking para la UI de la app.
+// Server-only: data fetching de tracking. Las constantes/labels viven en
+// `tracking-types.ts` para que los Client Components puedan importarlas.
 
 import { trackingRepo } from '@lince/db';
-import { DEMO_AGENCY_ID } from './mocks/agency';
+import { getCurrentAgencyId } from './repositories';
+import type { PropertyTrack, PropertyTrackStatus } from './tracking-types';
 
-export type PropertyTrackStatus =
-  | 'watching'
-  | 'interested'
-  | 'contacted'
-  | 'viewed'
-  | 'offering'
-  | 'rejected'
-  | 'bought';
-
-export interface PropertyTrack {
-  status: PropertyTrackStatus;
-  notes: string | null;
-  targetPriceEur: number | null;
-  contactedAt: Date | null;
-  viewedAt: Date | null;
-  updatedAt: Date;
-}
-
-export const TRACK_STATUS_LABEL: Record<PropertyTrackStatus, string> = {
-  watching: 'Vigilando',
-  interested: 'Interesado',
-  contacted: 'Contactado',
-  viewed: 'Visitado',
-  offering: 'Negociando',
-  rejected: 'Descartado',
-  bought: 'Adquirido',
-};
-
-export const TRACK_STATUS_TONE: Record<PropertyTrackStatus, 'default' | 'highlight' | 'mute'> = {
-  watching: 'default',
-  interested: 'highlight',
-  contacted: 'highlight',
-  viewed: 'highlight',
-  offering: 'highlight',
-  rejected: 'mute',
-  bought: 'highlight',
-};
+export type { PropertyTrack, PropertyTrackStatus };
+export { TRACK_STATUS_LABEL, TRACK_STATUS_TONE } from './tracking-types';
 
 export async function getPropertyTrack(propertyId: string): Promise<PropertyTrack | null> {
   try {
-    const row = await trackingRepo.getTrack(DEMO_AGENCY_ID, propertyId);
+    const agencyId = await getCurrentAgencyId();
+    const row = await trackingRepo.getTrack(agencyId, propertyId);
     if (!row) return null;
     return {
       status: row.status as PropertyTrackStatus,
@@ -60,7 +28,8 @@ export async function getPropertyTrack(propertyId: string): Promise<PropertyTrac
 
 export async function getTracksMap(propertyIds: string[]): Promise<Map<string, PropertyTrack>> {
   try {
-    const map = await trackingRepo.getTracksMap(DEMO_AGENCY_ID, propertyIds);
+    const agencyId = await getCurrentAgencyId();
+    const map = await trackingRepo.getTracksMap(agencyId, propertyIds);
     const out = new Map<string, PropertyTrack>();
     for (const [k, row] of map) {
       out.set(k, {
@@ -80,7 +49,8 @@ export async function getTracksMap(propertyIds: string[]): Promise<Map<string, P
 
 export async function listMyTracks() {
   try {
-    return trackingRepo.listTracksForAgency(DEMO_AGENCY_ID);
+    const agencyId = await getCurrentAgencyId();
+    return trackingRepo.listTracksForAgency(agencyId);
   } catch {
     return [];
   }

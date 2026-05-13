@@ -22,6 +22,7 @@ export const currentAgency: Agency = {
 export const currentUser: User = {
   id: DEMO_USER_ID,
   email: 'marc@gnerai.com',
+  phoneE164: null,
   name: 'Marc Sanjuan',
   createdAt: daysAgo(3),
 };

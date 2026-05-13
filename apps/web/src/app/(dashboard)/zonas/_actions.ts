@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { zonesRepo } from '@lince/db';
 import { normalizeE164 } from '@lince/notifier';
-import { currentAgency } from '@/lib/data/mocks/agency';
+import { getCurrentAgencyId } from '@/lib/data/repositories';
 
 const POSTAL_CODE_RE = /^\d{5}$/;
 
@@ -96,10 +96,11 @@ export async function createZoneAction(
   }
 
   const phone = parsed.data.alertPhone ? normalizeE164(parsed.data.alertPhone) : null;
+  const agencyId = await getCurrentAgencyId();
 
   try {
     const zone = await zonesRepo.createZone({
-      agencyId: currentAgency.id,
+      agencyId,
       name: parsed.data.name,
       postalCodes: parsed.data.postalCodes,
       filters: {

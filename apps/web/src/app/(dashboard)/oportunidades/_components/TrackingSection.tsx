@@ -15,7 +15,7 @@ import {
   TRACK_STATUS_TONE,
   type PropertyTrack,
   type PropertyTrackStatus,
-} from '@/lib/data/tracking';
+} from '@/lib/data/tracking-types';
 import { removeTrackAction, updateTrackAction } from '../_actions';
 
 const STATUSES: PropertyTrackStatus[] = [

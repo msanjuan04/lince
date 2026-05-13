@@ -15,7 +15,8 @@ import type {
   Zone,
 } from './types';
 import { zonesRepo, prisma } from '@lince/db';
-import { currentAgency, currentUser, agencyMembersMock } from './mocks/agency';
+import { getLinceSession } from '@lince/auth/server';
+import { agencyMembersMock } from './mocks/agency';
 import { capturesMock } from './mocks/captures';
 import { listingsMock, listingLeadsMock } from './mocks/listings';
 import {
@@ -32,14 +33,42 @@ import {
 } from './db';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sesión (placeholder hasta Auth.js v5 — Fase 5+)
+// Sesión — lee Supabase Auth y materializa el perfil de Lince (User + Agency).
+// El middleware ya garantiza que solo se llama autenticado, pero por seguridad
+// lanzamos si no hay sesión.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getCurrentSession() {
-  return { user: currentUser, agency: currentAgency };
+  const session = await getLinceSession();
+  if (!session) {
+    throw new Error('No autenticado — middleware debió bloquear esta ruta.');
+  }
+  return {
+    user: {
+      id: session.user.id,
+      email: session.user.email,
+      phoneE164: session.user.phoneE164,
+      name: session.user.name ?? session.user.phoneE164 ?? session.user.email,
+      createdAt: new Date(),
+    },
+    agency: {
+      id: session.agency.id,
+      name: session.agency.name,
+      plan: session.agency.plan,
+      active: true,
+      createdAt: new Date(),
+    },
+  };
+}
+
+/** Devuelve solo el agencyId de la sesión actual. Útil en server actions. */
+export async function getCurrentAgencyId(): Promise<string> {
+  const { agency } = await getCurrentSession();
+  return agency.id;
 }
 
 export async function getAgencyMembers(): Promise<AgencyMember[]> {
+  // TODO: leer de DB cuando haya invitaciones reales — por ahora el owner único.
   return agencyMembersMock;
 }
 
@@ -170,7 +199,8 @@ export async function getOpportunityStats(): Promise<{
 
 export async function getZones(): Promise<Zone[]> {
   try {
-    const rows = await zonesRepo.listZonesForAgency(currentAgency.id);
+    const agencyId = await getCurrentAgencyId();
+    const rows = await zonesRepo.listZonesForAgency(agencyId);
     // Para cada zona, calcular matchingCount y newToday con queries individuales.
     // Cap: si hay >50 zonas habría que optimizar.
     const enriched = await Promise.all(

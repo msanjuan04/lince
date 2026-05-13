@@ -40,7 +40,8 @@ export interface Agency {
 
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
+  phoneE164: string | null;
   name: string | null;
   createdAt: Date;
 }

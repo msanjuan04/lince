@@ -115,6 +115,82 @@ export class WhatsAppClient {
     }
   }
 
+  /**
+   * Envía un OTP usando un template AUTHENTICATION pre-aprobado por Meta.
+   * El template debe tener:
+   *   - 1 variable BODY {{1}} → el código
+   *   - 1 botón COPY_CODE con el mismo código en el quick reply (opcional pero recomendado)
+   *
+   * Nombre del template: env WHATSAPP_OTP_TEMPLATE_NAME (default 'lince_otp').
+   * Idioma: env WHATSAPP_OTP_TEMPLATE_LANG (default 'es').
+   *
+   * En dry mode (sin credenciales) loggea el código y devuelve ok.
+   */
+  async sendOtpTemplate(to: string, code: string): Promise<WhatsAppSendResult> {
+    const normalized = normalizeE164(to);
+    if (!normalized) {
+      return { ok: false, dryRun: this.dryRun, error: `Número inválido: ${to}` };
+    }
+
+    if (this.dryRun) {
+      console.log(`[whatsapp DRY/OTP] to=${normalized} code=${code}`);
+      return { ok: true, dryRun: true };
+    }
+
+    const templateName = process.env['WHATSAPP_OTP_TEMPLATE_NAME'] ?? 'lince_otp';
+    const templateLang = process.env['WHATSAPP_OTP_TEMPLATE_LANG'] ?? 'es';
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${this.config.phoneNumberId}/messages`;
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: normalized,
+          type: 'template',
+          template: {
+            name: templateName,
+            language: { code: templateLang },
+            components: [
+              {
+                type: 'body',
+                parameters: [{ type: 'text', text: code }],
+              },
+              {
+                type: 'button',
+                sub_type: 'url',
+                index: '0',
+                parameters: [{ type: 'text', text: code }],
+              },
+            ],
+          },
+        }),
+      });
+      const data = (await res.json()) as
+        | { messages?: Array<{ id: string }>; error?: { message: string; code: number } }
+        | undefined;
+      if (!res.ok || data?.error) {
+        return {
+          ok: false,
+          dryRun: false,
+          error: data?.error?.message ?? `HTTP ${res.status}`,
+        };
+      }
+      return { ok: true, dryRun: false, messageId: data?.messages?.[0]?.id };
+    } catch (err) {
+      return {
+        ok: false,
+        dryRun: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
   isDryRun(): boolean {
     return this.dryRun;
   }

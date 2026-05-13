@@ -438,6 +438,8 @@ HTML servido al navegador
 
 ## 8. Roadmap inmediato
 
+> **Próxima decisión (estratégica):** Con el andamiaje actual (histórico, buckets, tracking, análisis financiero), Fase 4 (agente Pulse con Claude) es el paso de **mayor diferenciación competitiva** — informe semanal narrado con razonamiento + oferta concreta + argumentos de negociación. Es lo que convierte Lince en un producto que se cuenta a un amigo, no "otra herramienta de listados". Alternativas razonables si prefieres consolidar antes: Fase 1.C (Aliseda/Anticipa con Playwright) para más cobertura de fuentes, o deploy al droplet DigitalOcean con docker-compose para tener pipeline operativo en producción. Ambas son trabajo necesario pero no diferencian — son "más datos" o "más estable".
+
 ### Fase 1.C — más fuentes (cuando toque)
 
 - [ ] Aliseda con Playwright o API descubierta.
