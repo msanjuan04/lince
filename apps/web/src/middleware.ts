@@ -15,6 +15,17 @@ function isPublic(pathname: string): boolean {
 }
 
 export async function middleware(request: NextRequest) {
+  // Bypass dev: si LINCE_DEV_BYPASS_PHONE está set y no estamos en producción,
+  // se deja pasar todo. Útil mientras el Phone provider de Supabase no esté
+  // habilitado o para sesiones internas de demo.
+  if (process.env.NODE_ENV !== 'production' && process.env.LINCE_DEV_BYPASS_PHONE) {
+    const { pathname } = request.nextUrl;
+    if (pathname === '/login' || pathname === '/registro') {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+    return NextResponse.next({ request });
+  }
+
   const { response, user } = await updateSupabaseSession(request);
   const { pathname } = request.nextUrl;
 

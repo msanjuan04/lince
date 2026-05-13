@@ -296,6 +296,41 @@ export async function loginWithPhone(input: { phone: string; pin: string }): Pro
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getLinceSession(): Promise<LinceSession | null> {
+  // Bypass dev: si LINCE_DEV_BYPASS_USER_ID está set (solo permitido fuera de
+  // production), saltamos Supabase y resolvemos la sesión por phoneE164.
+  // Útil mientras el Phone provider de Supabase está deshabilitado.
+  const bypassPhone = process.env['LINCE_DEV_BYPASS_PHONE'];
+  if (bypassPhone && process.env['NODE_ENV'] !== 'production') {
+    const user = await prisma.user.findUnique({
+      where: { phoneE164: bypassPhone },
+      include: { memberships: { include: { agency: true } } },
+    });
+    if (user) {
+      const membership = user.memberships[0];
+      const agency = membership?.agency;
+      if (agency) {
+        return {
+          supabaseUserId: user.supabaseUserId ?? user.id,
+          email: user.email ?? '',
+          phoneE164: user.phoneE164 ?? bypassPhone,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            phoneE164: user.phoneE164,
+          },
+          agency: {
+            id: agency.id,
+            name: agency.name,
+            plan: agency.plan,
+            pulseRole: agency.pulseRole,
+          },
+          isOnboarded: !!agency.pulseRole,
+        };
+      }
+    }
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user: supabaseUser },
