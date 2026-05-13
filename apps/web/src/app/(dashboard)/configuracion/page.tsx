@@ -16,7 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { getAgencyMembers, getCurrentSession } from '@/lib/data/repositories';
-import { formatRelativeDate } from '@/lib/format';
+import { formatPhoneEs, formatRelativeDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AgencyPlan } from '@/lib/data/types';
 import { getSystemStatusAction } from './_actions';
@@ -156,7 +156,7 @@ export default async function ConfiguracionPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {m.user.email ?? (m.user.phoneE164 ? `+${m.user.phoneE164}` : '—')}
+                      {m.user.email ?? (m.user.phoneE164 ? formatPhoneEs(m.user.phoneE164) : '—')}
                     </TableCell>
                     <TableCell>
                       <StatusDot

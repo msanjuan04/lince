@@ -62,3 +62,17 @@ export function formatDiscountPct(price: number, marketPrice: number): string {
   if (marketPrice === 0) return '—';
   return percentFormatter.format((price - marketPrice) / marketPrice);
 }
+
+/**
+ * Formato display de móvil español: "623 808 712" (sin prefijo +34, asumimos
+ * España peninsular). Para móviles no-españoles, devuelve con '+' como respaldo.
+ */
+export function formatPhoneEs(e164: string | null | undefined): string {
+  if (!e164) return '';
+  const digits = e164.replace(/\D/g, '');
+  if (digits.startsWith('34') && digits.length === 11) {
+    return `${digits.slice(2, 5)} ${digits.slice(5, 7)} ${digits.slice(7, 9)} ${digits.slice(9)}`;
+  }
+  // No es ES → mantenemos prefijo internacional con '+'
+  return `+${digits}`;
+}

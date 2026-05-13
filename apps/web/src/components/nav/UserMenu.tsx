@@ -6,19 +6,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { User } from '@/lib/data/types';
-
-function formatPhone(e164: string | null): string {
-  if (!e164) return '';
-  if (e164.startsWith('34') && e164.length === 11) {
-    return `+34 ${e164.slice(2, 5)} ${e164.slice(5, 7)} ${e164.slice(7, 9)} ${e164.slice(9)}`;
-  }
-  return `+${e164}`;
-}
+import { formatPhoneEs } from '@/lib/format';
 
 function initials(name: string | null, fallback: string): string {
   if (name) {
@@ -34,7 +26,7 @@ function initials(name: string | null, fallback: string): string {
 }
 
 export function UserMenu({ user }: { user: User }) {
-  const phoneDisplay = formatPhone(user.phoneE164);
+  const phoneDisplay = formatPhoneEs(user.phoneE164);
   const secondary = user.email ?? phoneDisplay;
   const display = user.name ?? user.email ?? phoneDisplay;
   const initialFallback = user.email ?? user.phoneE164 ?? 'LI';
@@ -53,9 +45,7 @@ export function UserMenu({ user }: { user: User }) {
         <ChevronsUpDown className="text-muted-foreground size-3.5 group-data-[collapsible=icon]:hidden" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" className="w-56">
-        <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
-          {secondary}
-        </DropdownMenuLabel>
+        <div className="text-muted-foreground px-1.5 py-1 text-xs">{secondary}</div>
         <DropdownMenuSeparator />
         <DropdownMenuItem>
           <UserRound className="size-4" />
