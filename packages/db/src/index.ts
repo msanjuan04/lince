@@ -17,6 +17,7 @@ export * as crawlerRunsRepo from './repositories/crawler-runs';
 export * as zonesRepo from './repositories/zones';
 export * as zoneAlertsRepo from './repositories/zone-alerts';
 export * as trackingRepo from './repositories/tracking';
+export * as pulseReportsRepo from './repositories/pulse-reports';
 
 // Re-exports de tipos para uso top-level desde consumidores.
 export type { PropertyUpsertInput, UpsertResult } from './repositories/properties';
@@ -24,3 +25,5 @@ export type { ErrorRecord, FinishRunInput } from './repositories/crawler-runs';
 export type { ZoneInput } from './repositories/zones';
 export type { CreateZoneAlertInput } from './repositories/zone-alerts';
 export type { UpsertTrackInput } from './repositories/tracking';
+export type { CreatePulseReportInput } from './repositories/pulse-reports';
+export { weekStartUTC } from './repositories/pulse-reports';

@@ -1,7 +1,9 @@
 'use client';
 
 import {
+  Bell,
   Bookmark,
+  FileText,
   Handshake,
   LayoutDashboard,
   Map,
@@ -11,6 +13,9 @@ import {
   Telescope,
   ScanSearch,
 } from 'lucide-react';
+
+// Re-añadimos "Alertas" al sidebar — Marc lo había quitado pero el inversor
+// necesita visibilidad rápida del historial de WhatsApp disparados.
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -32,7 +37,9 @@ const NAV_ITEMS = [
   { href: '/oportunidades', label: 'Oportunidades', icon: ScanSearch },
   { href: '/oportunidades/mapa', label: 'Mapa', icon: MapPin },
   { href: '/seguimiento', label: 'Mi seguimiento', icon: Bookmark },
+  { href: '/informe', label: 'Informe Pulse', icon: FileText },
   { href: '/zonas', label: 'Zonas', icon: Map },
+  { href: '/alertas', label: 'Alertas', icon: Bell },
   { href: '/captures', label: 'Captures', icon: Handshake },
   { href: '/listings', label: 'Listings', icon: Tag },
   { href: '/configuracion', label: 'Configuración', icon: Settings },

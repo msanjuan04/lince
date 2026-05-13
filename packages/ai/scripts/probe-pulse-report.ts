@@ -1,132 +1,88 @@
-// Probe del Agente Pulse: carga datos reales de la DB, llama a Claude,
-// imprime el informe + métricas de uso.
-//
-// Uso:
-//   pnpm --filter @lince/ai pulse:probe -- --role inversor_directo --top 8
-//
-// Roles válidos: inmobiliaria, buying_agent, inversor_directo, flipper
+// Smoke directo del agente Pulse — carga datos, llama a Claude, persiste.
+// Útil para validar la integración sin pasar por la UI.
 
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { generatePulseReport, loadPulseData } from '../src/index';
+import { Prisma, prisma, weekStartUTC } from '@lince/db';
 
-// Carga .env de la raíz del monorepo SIN pisar variables que ya estén en el shell.
-// (Útil cuando ANTHROPIC_API_KEY vive solo en shell y DATABASE_URL en .env.)
-function loadEnvSoft(): void {
-  const candidates = [
-    resolve(process.cwd(), '.env'),
-    resolve(process.cwd(), '../../.env'),
-    resolve(__dirname, '../../../.env'),
-  ];
-  for (const path of candidates) {
-    if (!existsSync(path)) continue;
-    const content = readFileSync(path, 'utf8');
-    for (const line of content.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eq = trimmed.indexOf('=');
-      if (eq < 0) continue;
-      const key = trimmed.slice(0, eq).trim();
-      let value = trimmed.slice(eq + 1).trim();
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
-      // Solo set si el shell no la tiene ya con un valor no vacío.
-      if (!process.env[key] && value) {
-        process.env[key] = value;
-      }
-    }
-    break;
-  }
-}
-
-loadEnvSoft();
-
-import { generatePulseReport, loadPulseData, type PulseReaderRole } from '../src';
-
-const VALID_ROLES: PulseReaderRole[] = [
-  'inmobiliaria',
-  'buying_agent',
-  'inversor_directo',
-  'flipper',
-];
-
-function parseArgs(): { role: PulseReaderRole; topN: number; postalCodes?: string[] } {
-  const argv = process.argv.slice(2);
-  let role: PulseReaderRole = 'inversor_directo';
-  let topN = 8;
-  let postalCodes: string[] | undefined;
-
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === '--role') {
-      const v = argv[i + 1];
-      if (v && (VALID_ROLES as string[]).includes(v)) role = v as PulseReaderRole;
-      else {
-        console.error(`Rol inválido: ${v}. Válidos: ${VALID_ROLES.join(', ')}`);
-        process.exit(2);
-      }
-    } else if (arg === '--top') {
-      const v = argv[i + 1];
-      if (v) topN = Math.max(1, Number.parseInt(v, 10) || 8);
-    } else if (arg === '--cp') {
-      const v = argv[i + 1];
-      if (v)
-        postalCodes = v
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
-    }
-  }
-
-  return { role, topN, postalCodes };
-}
+const AGENCY_ID = '00000000-0000-0000-0000-000000000001';
 
 async function main(): Promise<void> {
-  const { role, topN, postalCodes } = parseArgs();
+  console.log('\n=== Smoke informe Pulse ===\n');
 
-  console.error(
-    `[probe] Cargando datos: role=${role} topN=${topN} cps=${postalCodes?.join(',') ?? 'todos'}`,
-  );
-  const data = await loadPulseData({ readerRole: role, topN, postalCodes });
-  console.error(
-    `[probe] Datos cargados: ${data.properties.length} propiedades, ${data.zoneStats.length} zonas`,
+  const data = await loadPulseData({
+    readerRole: 'inversor_directo',
+    topN: 10,
+    weekEndDate: new Date(),
+  });
+  console.log(
+    `Dataset cargado: ${data.properties.length} propiedades, ${data.zoneStats.length} zonas`,
   );
 
-  if (data.properties.length === 0) {
-    console.error('[probe] DB sin propiedades con price+m². Aborto.');
+  const apiKey = process.env['ANTHROPIC_API_KEY'];
+  if (!apiKey) {
+    console.error('❌ ANTHROPIC_API_KEY no está en el entorno');
     process.exit(1);
   }
 
-  console.error(`[probe] Llamando a Claude...`);
+  console.log('Llamando a Claude (claude-opus-4-7)...');
   const t0 = Date.now();
-  const result = await generatePulseReport(data);
-  const elapsedMs = Date.now() - t0;
+  const result = await generatePulseReport(data, { apiKey, model: 'claude-opus-4-7' });
+  const ms = Date.now() - t0;
 
-  console.error(`[probe] OK en ${elapsedMs}ms.`);
-  console.error(`[probe] Modelo: ${result.model}`);
-  console.error(
-    `[probe] Tokens — input: ${result.usage.inputTokens}, output: ${result.usage.outputTokens}, cache_create: ${result.usage.cacheCreationInputTokens}, cache_read: ${result.usage.cacheReadInputTokens}`,
-  );
-  console.error(`[probe] Stop reason: ${result.stopReason}`);
-  console.error('');
-  console.error('======================== INFORME ========================');
-  console.error('');
+  const inputCost = (result.usage.inputTokens * 15) / 1_000_000;
+  const outputCost = (result.usage.outputTokens * 75) / 1_000_000;
+  const costEur = inputCost + outputCost;
 
-  // El informe va a stdout para poder redirigir a fichero limpio.
-  process.stdout.write(result.markdown);
-  process.stdout.write('\n');
+  console.log(`\n=== Respuesta de Claude (${(ms / 1000).toFixed(1)}s) ===`);
+  console.log(`  Modelo:    ${result.model}`);
+  console.log(`  Tokens IN: ${result.usage.inputTokens}`);
+  console.log(`  Tokens OUT:${result.usage.outputTokens}`);
+  console.log(`  Cache HIT: ${result.usage.cacheReadInputTokens}`);
+  console.log(`  Coste est: ${costEur.toFixed(4)}€`);
+  console.log(`\n--- Markdown (primeros 1500 chars) ---\n`);
+  console.log(result.markdown.slice(0, 1500));
+  console.log(`\n... (${result.markdown.length} chars total)`);
+
+  console.log('\nPersistiendo en pulse_reports...');
+  const week = weekStartUTC(new Date());
+  const topOpps = data.properties.slice(0, 5).map((p) => ({
+    propertyId: p.id,
+    address: p.address,
+    price: p.price,
+    pricePerM2: p.pricePerM2,
+    opportunityScore: p.opportunityScore,
+  }));
+  const report = await prisma.pulseReport.upsert({
+    where: { agencyId_weekOf: { agencyId: AGENCY_ID, weekOf: week } },
+    create: {
+      agencyId: AGENCY_ID,
+      weekOf: week,
+      narrative: result.markdown,
+      topOpportunities: topOpps as Prisma.InputJsonValue,
+      modelId: result.model,
+      promptVersion: 'v1',
+      tokensIn: result.usage.inputTokens,
+      tokensOut: result.usage.outputTokens,
+      costEur: new Prisma.Decimal(costEur),
+      dryRun: false,
+    },
+    update: {
+      narrative: result.markdown,
+      topOpportunities: topOpps as Prisma.InputJsonValue,
+      modelId: result.model,
+      promptVersion: 'v1',
+      tokensIn: result.usage.inputTokens,
+      tokensOut: result.usage.outputTokens,
+      costEur: new Prisma.Decimal(costEur),
+      dryRun: false,
+    },
+  });
+  console.log(`✓ Persistido: ${report.id}`);
+
+  await prisma.$disconnect();
 }
 
-main()
-  .catch((err: unknown) => {
-    console.error('[probe] Error:', err);
-    process.exit(1);
-  })
-  .finally(async () => {
-    // Cerrar Prisma para que el proceso termine.
-    const { prisma } = await import('@lince/db');
-    await prisma.$disconnect();
-  });
+main().catch((e) => {
+  console.error('Fatal:', e);
+  process.exit(1);
+});

@@ -70,12 +70,13 @@ model Agency {
   active    Boolean    @default(true)
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz()
 
-  members  AgencyMember[]
-  zones    Zone[]
-  captures Capture[]
-  listings Listing[]
-  leads    ListingLead[]
-  tracks   PropertyTrack[]
+  members      AgencyMember[]
+  zones        Zone[]
+  captures     Capture[]
+  listings     Listing[]
+  leads        ListingLead[]
+  tracks       PropertyTrack[]
+  pulseReports PulseReport[]
 
   @@map("agencies")
 }
@@ -249,6 +250,39 @@ model Zone {
 
   @@index([agencyId, active])
   @@map("zones")
+}
+
+// --------------------------------------------------------------------------
+// Pulse Reports — Fase 4: informe semanal generado por Claude.
+// El agente analiza el inventario + histórico + buckets y devuelve un
+// resumen narrado + top N oportunidades con oferta sugerida y argumentos.
+// --------------------------------------------------------------------------
+
+model PulseReport {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  agencyId         String   @map("agency_id") @db.Uuid
+  /** Inicio de la semana ISO a la que pertenece el informe (lunes 00:00). */
+  weekOf           DateTime @map("week_of") @db.Date
+  /** Narrativa breve de mercado (3-5 frases). */
+  narrative        String?  @db.Text
+  /** Array de oportunidades top con score, oferta sugerida, rationale, args. */
+  topOpportunities Json     @map("top_opportunities") @db.JsonB
+  /** Stats del dataset analizado: nº propiedades, nº rebajas detectadas, etc. */
+  inventorySnapshot Json?   @map("inventory_snapshot") @db.JsonB
+  /** Modelo Claude usado (`claude-opus-4-7`, etc.) y prompt version. */
+  modelId          String?  @map("model_id")
+  promptVersion    String?  @map("prompt_version")
+  tokensIn         Int?     @map("tokens_in")
+  tokensOut        Int?     @map("tokens_out")
+  costEur          Decimal? @map("cost_eur") @db.Decimal(8, 4)
+  dryRun           Boolean  @default(false) @map("dry_run")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, weekOf])
+  @@index([agencyId, createdAt(sort: Desc)])
+  @@map("pulse_reports")
 }
 
 // --------------------------------------------------------------------------
