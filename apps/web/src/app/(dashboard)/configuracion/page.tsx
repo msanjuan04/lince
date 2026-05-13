@@ -19,6 +19,8 @@ import { getAgencyMembers, getCurrentSession } from '@/lib/data/repositories';
 import { formatRelativeDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { AgencyPlan } from '@/lib/data/types';
+import { getSystemStatusAction } from './_actions';
+import { SystemStatus } from './_components/SystemStatus';
 
 export const metadata: Metadata = {
   title: 'Configuración',
@@ -71,12 +73,23 @@ function initials(name: string | null, email: string): string {
 }
 
 export default async function ConfiguracionPage() {
-  const [{ agency }, members] = await Promise.all([getCurrentSession(), getAgencyMembers()]);
+  const [{ agency }, members, systemStatus] = await Promise.all([
+    getCurrentSession(),
+    getAgencyMembers(),
+    getSystemStatusAction(),
+  ]);
 
   return (
     <>
-      <Topbar title="Configuración" description="Inmobiliaria, equipo y plan" />
+      <Topbar title="Configuración" description="Sistema, inmobiliaria, equipo y plan" />
       <div className="flex flex-1 flex-col gap-12 p-6 sm:gap-16 sm:p-10">
+        <Section
+          title="Estado del sistema"
+          description="Salud de la infraestructura y test rápido del flujo de alertas."
+        >
+          <SystemStatus status={systemStatus} />
+        </Section>
+
         <Section
           title="Inmobiliaria"
           description="Datos visibles para tu equipo y usados en propuestas."
