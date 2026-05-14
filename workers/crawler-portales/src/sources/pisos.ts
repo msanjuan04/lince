@@ -27,11 +27,25 @@ import type { PropertyUpsertInput } from '@lince/db';
 import type { CrawlerSource, CrawlOptions, CrawlOutcome, CrawlErrorRecord, Logger } from './types';
 
 const PISOS_BASE = 'https://www.pisos.com';
-const LIST_URL = `${PISOS_BASE}/venta/pisos-barcelona_capital/`;
 const DETAIL_HREF_RE =
   /^\/comprar\/(?:piso|casa|atico|chalet|local|estudio|apartamento)-([a-z0-9_-]+)\/?$/i;
 const ID_RE = /-(\d+)_(\d+)\/?$/;
-const MAX_PAGES = 8;
+const MAX_PAGES_PER_CITY = 6;
+
+/**
+ * Slugs verificados (HTTP 200 con UA LinceBot/1.0, mayo 2026). Si añades una
+ * ciudad nueva, antes prueba que `https://www.pisos.com/venta/pisos-<slug>/`
+ * devuelva 200 — la convención no siempre es obvia (ej. L'Hospitalet va sin
+ * la "l_" inicial: `hospitalet_de_llobregat`).
+ */
+const PISOS_CITY_SLUGS = [
+  'barcelona_capital',
+  'sant_cugat_del_valles',
+  'badalona',
+  'hospitalet_de_llobregat',
+  'vilassar_de_mar',
+  'sabadell',
+] as const;
 
 export class PisosSource implements CrawlerSource {
   readonly name = 'pisos';
@@ -45,26 +59,49 @@ export class PisosSource implements CrawlerSource {
     const cap = opts.maxItems ?? 150;
     const detailHrefs = new Set<string>();
 
-    // Paginate listado hasta llenar el cap o agotar páginas
-    for (let page = 1; page <= MAX_PAGES; page += 1) {
-      if (detailHrefs.size >= cap) break;
-      const url = page === 1 ? LIST_URL : `${LIST_URL}${page}/`;
-      try {
-        const html = await fetchText(url, { limiter: this.limiter, timeoutMs: 25_000 });
-        const found = extractListingHrefs(html);
-        const before = detailHrefs.size;
-        for (const h of found) detailHrefs.add(h);
-        const added = detailHrefs.size - before;
-        log.info(`[pisos] page ${page}: +${added} URLs (total ${detailHrefs.size})`);
-        if (added === 0) break;
-      } catch (err) {
-        errors.push(errorRecord(url, err));
-        break;
+    // Quota por ciudad para repartir el cap proporcionalmente. Sin esto, BCN
+    // capital saturaría las primeras páginas y las otras ciudades nunca
+    // entrarían en el run.
+    const perCityCap = Math.max(5, Math.ceil(cap / PISOS_CITY_SLUGS.length));
+
+    cityLoop: for (const city of PISOS_CITY_SLUGS) {
+      const cityListBase = `${PISOS_BASE}/venta/pisos-${city}/`;
+      let cityCount = 0;
+
+      for (let page = 1; page <= MAX_PAGES_PER_CITY; page += 1) {
+        if (detailHrefs.size >= cap) break cityLoop;
+        if (cityCount >= perCityCap) break;
+        const url = page === 1 ? cityListBase : `${cityListBase}${page}/`;
+        try {
+          const html = await fetchText(url, { limiter: this.limiter, timeoutMs: 25_000 });
+          const found = extractListingHrefs(html);
+          let added = 0;
+          for (const h of found) {
+            // Por página de ciudad: no nos llevamos más hrefs de los que esa
+            // ciudad puede aportar (perCityCap). Sin esto, una página con 30
+            // listings de Barcelona llenaría el cap global antes de pasar a la
+            // siguiente ciudad.
+            if (cityCount >= perCityCap) break;
+            if (detailHrefs.size >= cap) break;
+            if (!detailHrefs.has(h)) {
+              detailHrefs.add(h);
+              cityCount += 1;
+              added += 1;
+            }
+          }
+          log.info(
+            `[pisos] ${city} page ${page}: +${added} URLs (city=${cityCount}/${perCityCap}, total ${detailHrefs.size})`,
+          );
+          if (added === 0) break;
+        } catch (err) {
+          errors.push(errorRecord(url, err));
+          break;
+        }
       }
     }
 
     const hrefs = Array.from(detailHrefs).slice(0, cap);
-    log.info(`[pisos] parseando ${hrefs.length} detalles`);
+    log.info(`[pisos] parseando ${hrefs.length} detalles de ${PISOS_CITY_SLUGS.length} ciudades`);
 
     for (const href of hrefs) {
       const detailUrl = `${PISOS_BASE}${href}`;

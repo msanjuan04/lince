@@ -86,13 +86,22 @@ export default async function OportunidadesPage({ searchParams }: PageProps) {
     if (filters.onlyIds.length === 0) filters.onlyIds = ['00000000-0000-0000-0000-000000000000']; // forzar 0 resultados
   }
 
-  const [items, stats] = await Promise.all([getOpportunities(filters), getOpportunityStats()]);
+  // Bloque 1: lista + stats + propiedad seleccionada en paralelo. Track e
+  // history de la seleccionada dependen de que exista; los lanzamos en cuanto
+  // sabemos que sí. tracksMap depende de `items`, va con los await siguientes.
+  const [items, stats, selected] = await Promise.all([
+    getOpportunities(filters),
+    getOpportunityStats(),
+    params.selected ? getPropertyById(params.selected) : Promise.resolve(null),
+  ]);
 
-  const selected = params.selected ? await getPropertyById(params.selected) : null;
   if (params.selected && !selected) notFound();
-  const selectedHistory = selected ? await getPropertyHistory(selected.id) : [];
-  const selectedTrack = selected ? await getPropertyTrack(selected.id) : null;
-  const tracksMap = await getTracksMap(items.map((p) => p.id));
+
+  const [selectedHistory, selectedTrack, tracksMap] = await Promise.all([
+    selected ? getPropertyHistory(selected.id) : Promise.resolve([]),
+    selected ? getPropertyTrack(selected.id) : Promise.resolve(null),
+    getTracksMap(items.map((p) => p.id)),
+  ]);
 
   const hero = items[0] ?? null;
   const rest = items.slice(1);

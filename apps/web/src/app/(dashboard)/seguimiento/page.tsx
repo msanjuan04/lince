@@ -31,13 +31,16 @@ const STATUS_ORDER: PropertyTrackStatus[] = [
 ];
 
 export default async function SeguimientoPage() {
-  const agencyId = await getCurrentAgencyId();
-  const allOpps = await getOpportunities();
-  const tracks = await getTracksMap(allOpps.map((p) => p.id));
-  const counts = (await trackingRepo.getTrackStatusCounts(agencyId).catch(() => ({}))) as Record<
-    string,
-    number
-  >;
+  // agencyId + counts dependen solo de la sesión; allOpps es independiente.
+  // tracks depende de allOpps. Paralelo en dos olas.
+  const [agencyId, allOpps] = await Promise.all([getCurrentAgencyId(), getOpportunities()]);
+
+  const [tracks, counts] = await Promise.all([
+    getTracksMap(allOpps.map((p) => p.id)),
+    trackingRepo.getTrackStatusCounts(agencyId).catch(() => ({})) as Promise<
+      Record<string, number>
+    >,
+  ]);
 
   const tracked = allOpps
     .filter((p) => tracks.has(p.id))

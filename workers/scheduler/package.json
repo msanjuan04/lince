@@ -12,6 +12,7 @@
     "trigger-now": "tsx src/trigger.ts",
     "enrich-catastro": "tsx src/enrich-catastro.ts",
     "evaluate-zones": "tsx src/evaluate-zones.ts",
+    "score": "tsx src/score-properties.ts",
     "test-whatsapp": "tsx src/test-whatsapp.ts",
     "trigger-pulse": "tsx src/trigger-pulse.ts"
   },

@@ -11,8 +11,11 @@
 
 import { prisma, zonesRepo, zoneAlertsRepo, type ZoneAlertTrigger } from '@lince/db';
 import {
+  TelegramClient,
   WhatsAppClient,
+  getTelegramConfigFromEnv,
   getWhatsAppConfigFromEnv,
+  renderTelegramAlert,
   renderWhatsAppMessage,
   type AlertContext,
   type AlertTrigger,
@@ -55,9 +58,12 @@ export async function runEvaluateZones(
   const zones = await zonesRepo.listActiveZones();
   console.log(`[evaluate-zones] ${zones.length} zonas activas`);
 
-  // Cliente WhatsApp compartido. Se inicializa en modo dry si faltan credenciales.
+  // Cliente WhatsApp (legacy) y Telegram (canal preferido para uso interno).
+  // Ambos entran en modo dry si faltan credenciales. La decisión de qué canal
+  // usar se hace por zona según `alertChannels`.
   const wa = new WhatsAppClient(getWhatsAppConfigFromEnv());
-  const effectivelyDry = opts.dryRun || wa.isDryRun();
+  const tg = new TelegramClient(getTelegramConfigFromEnv());
+  const tgChatIds = parseTelegramChatIds(process.env['TELEGRAM_CHAT_IDS']);
 
   let alertsCreated = 0;
   let alertsSent = 0;
@@ -79,23 +85,43 @@ export async function runEvaluateZones(
     );
 
     for (const task of tasks) {
+      // Decide canal: telegram preferido para uso interno, whatsapp legacy.
+      const useTelegram = zone.alertChannels.includes('telegram');
+      const useWhatsApp = !useTelegram && zone.alertChannels.includes('whatsapp');
+
       // Crear la fila (dedup automático por unique constraint)
       const alert = await zoneAlertsRepo.upsertZoneAlert({
         zoneId: zone.id,
         propertyId: task.propertyId,
         trigger: TRIGGER_MAP[task.trigger],
-        channel: zone.alertChannels.includes('whatsapp') ? 'whatsapp' : 'none',
+        channel: useTelegram ? 'telegram' : useWhatsApp ? 'whatsapp' : 'none',
       });
       if (!alert.created) continue; // ya existía, no reprocesar
       alertsCreated += 1;
 
-      // Si no quiere whatsapp o no tiene teléfono → skipped
-      if (!zone.alertChannels.includes('whatsapp') || !zone.alertPhoneE164) {
+      // Si ningún canal soportado está configurado → skipped
+      if (!useTelegram && !useWhatsApp) {
         await zoneAlertsRepo.markAlertSkipped(
           alert.id,
-          !zone.alertChannels.includes('whatsapp')
-            ? 'whatsapp no está entre los alert_channels de la zona'
-            : 'sin alert_phone_e164 configurado',
+          'zona sin canal compatible (ni telegram ni whatsapp en alert_channels)',
+        );
+        alertsSkipped += 1;
+        continue;
+      }
+
+      // Falta de destinatario por canal → skipped
+      if (useTelegram && tgChatIds.length === 0) {
+        await zoneAlertsRepo.markAlertSkipped(
+          alert.id,
+          'TELEGRAM_CHAT_IDS vacío (necesario para canal telegram)',
+        );
+        alertsSkipped += 1;
+        continue;
+      }
+      if (useWhatsApp && !zone.alertPhoneE164) {
+        await zoneAlertsRepo.markAlertSkipped(
+          alert.id,
+          'sin alert_phone_e164 configurado para canal whatsapp',
         );
         alertsSkipped += 1;
         continue;
@@ -123,7 +149,7 @@ export async function runEvaluateZones(
           postalCode: property.postalCode,
           price: property.price ? Number(property.price) : null,
           pricePerM2: property.pricePerM2 ? Number(property.pricePerM2) : null,
-          zoneAvgPricePerM2: null, // se calcula vía adapter en la app, aquí lo simplificamos
+          zoneAvgPricePerM2: property.zoneAvgPricePerM2 ? Number(property.zoneAvgPricePerM2) : null,
           m2: property.m2,
           rooms: property.rooms,
           sourceLabel: sourceLabelMap[property.source] ?? property.source,
@@ -131,31 +157,56 @@ export async function runEvaluateZones(
         },
       };
 
-      const body = renderWhatsAppMessage(task.trigger, ctx);
-
-      if (effectivelyDry) {
-        console.log(
-          `[evaluate-zones DRY] would send to ${zone.alertPhoneE164} for property ${property.id}`,
-        );
-        // Dejamos la fila como pending para que se mande cuando se complete config.
-        alertsSent += 1; // contamos como "sent" semánticamente (la creación funcionó)
+      if (opts.dryRun) {
+        const channel = useTelegram
+          ? `telegram (${tgChatIds.length} chats)`
+          : `whatsapp ${zone.alertPhoneE164}`;
+        console.log(`[evaluate-zones DRY] would send to ${channel} for property ${property.id}`);
+        alertsSent += 1;
         continue;
       }
 
-      const result = await wa.sendText({ to: zone.alertPhoneE164, body });
-      if (result.ok) {
-        await zoneAlertsRepo.markAlertSent(alert.id);
-        alertsSent += 1;
+      if (useTelegram) {
+        const html = renderTelegramAlert(task.trigger, ctx);
+        let ok = true;
+        let firstError: string | undefined;
+        for (const chatId of tgChatIds) {
+          const r = await tg.sendMessage({
+            chatId,
+            text: html,
+            parseMode: 'HTML',
+            disableWebPagePreview: false,
+          });
+          if (!r.ok) {
+            ok = false;
+            firstError ??= r.error;
+          }
+        }
+        if (ok) {
+          await zoneAlertsRepo.markAlertSent(alert.id);
+          alertsSent += 1;
+        } else {
+          await zoneAlertsRepo.markAlertFailed(alert.id, firstError ?? 'unknown');
+          alertsFailed += 1;
+        }
       } else {
-        await zoneAlertsRepo.markAlertFailed(alert.id, result.error ?? 'unknown');
-        alertsFailed += 1;
+        // useWhatsApp por descarte (no entramos aquí si ambos canales están).
+        const body = renderWhatsAppMessage(task.trigger, ctx);
+        const result = await wa.sendText({ to: zone.alertPhoneE164!, body });
+        if (result.ok) {
+          await zoneAlertsRepo.markAlertSent(alert.id);
+          alertsSent += 1;
+        } else {
+          await zoneAlertsRepo.markAlertFailed(alert.id, result.error ?? 'unknown');
+          alertsFailed += 1;
+        }
       }
     }
   }
 
   const durationMs = Date.now() - startedAt;
   console.log(
-    `\n[evaluate-zones] done in ${(durationMs / 1000).toFixed(1)}s | zones=${zones.length} created=${alertsCreated} sent=${alertsSent} skipped=${alertsSkipped} failed=${alertsFailed} ${effectivelyDry ? '(DRY)' : ''}`,
+    `\n[evaluate-zones] done in ${(durationMs / 1000).toFixed(1)}s | zones=${zones.length} created=${alertsCreated} sent=${alertsSent} skipped=${alertsSkipped} failed=${alertsFailed} ${opts.dryRun ? '(DRY)' : ''}`,
   );
 
   return {
@@ -166,4 +217,12 @@ export async function runEvaluateZones(
     alertsFailed,
     durationMs,
   };
+}
+
+function parseTelegramChatIds(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }

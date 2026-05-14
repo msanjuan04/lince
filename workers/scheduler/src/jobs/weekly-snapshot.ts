@@ -21,6 +21,7 @@ import { runEnrichCatastro, type EnrichCatastroResult } from './enrich-catastro'
 import { runEvaluateZones, type EvaluateZonesResult } from './evaluate-zones';
 import { runDetectDisappeared, type DetectDisappearedResult } from './detect-disappeared';
 import { runAnalyzePhotos, type AnalyzePhotosResult } from './analyze-photos';
+import { runScoreProperties, type ScorePropertiesResult } from './score-properties';
 
 export interface WeeklySnapshotOptions {
   /** Fuentes a ejecutar (orden importa). Por defecto: pisos, boe, solvia. */
@@ -31,6 +32,8 @@ export interface WeeklySnapshotOptions {
   postalCodes?: string[];
   /** Si true, después del crawl ejecuta el enricher Catastro. Default true. */
   enrichCatastro?: boolean;
+  /** Si true, calcula y persiste opportunity_score por bucket+CP. Default true. */
+  scoreProperties?: boolean;
   /** Si true, evalúa zonas y dispara alertas. Default true. */
   evaluateZones?: boolean;
   /** Si true, marca propiedades desaparecidas (alimenta mediana absorción). Default true. */
@@ -45,6 +48,7 @@ export interface WeeklySnapshotResult {
   durationMs: number;
   runs: OrchestratorResult[];
   enrichCatastro?: EnrichCatastroResult;
+  scoreProperties?: ScorePropertiesResult;
   evaluateZones?: EvaluateZonesResult;
   detectDisappeared?: DetectDisappearedResult;
   analyzePhotos?: AnalyzePhotosResult;
@@ -102,6 +106,20 @@ export async function runWeeklySnapshot(
       enrichCatastro = await runEnrichCatastro({ maxItems: 5000 });
     } catch (err) {
       console.error('[weekly-snapshot] enrich-catastro FATAL:', err);
+    }
+  }
+
+  // Recalcular opportunity_score por bucket+CP usando la mediana real.
+  // Tiene que ir DESPUÉS de los crawlers (para incluir nuevas props en la
+  // mediana) y ANTES de evaluate-zones (porque las alertas high_score lo
+  // necesitan) y analyze-photos (que filtra por minScore).
+  let scoreProperties: ScorePropertiesResult | undefined;
+  if (opts.scoreProperties !== false) {
+    try {
+      console.log('\n[weekly-snapshot] arrancando score-properties...');
+      scoreProperties = await runScoreProperties();
+    } catch (err) {
+      console.error('[weekly-snapshot] score-properties FATAL:', err);
     }
   }
 
@@ -166,6 +184,11 @@ export async function runWeeklySnapshot(
   if (enrichCatastro) {
     console.log(`  Geocoded (Catastro): ${enrichCatastro.enriched}/${enrichCatastro.attempted}`);
   }
+  if (scoreProperties) {
+    console.log(
+      `  Scored: ${scoreProperties.scored}/${scoreProperties.totalEvaluated} (sin mediana: ${scoreProperties.unscoredNoMedian}, sin precio: ${scoreProperties.unscoredMissingPrice})`,
+    );
+  }
   if (evaluateZones) {
     console.log(
       `  Zone alerts: ${evaluateZones.alertsCreated} created · ${evaluateZones.alertsSent} sent · ${evaluateZones.alertsSkipped} skipped · ${evaluateZones.alertsFailed} failed`,
@@ -189,6 +212,7 @@ export async function runWeeklySnapshot(
     durationMs,
     runs,
     enrichCatastro,
+    scoreProperties,
     evaluateZones,
     detectDisappeared,
     analyzePhotos,

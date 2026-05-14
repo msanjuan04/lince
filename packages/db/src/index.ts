@@ -2,11 +2,14 @@ import { PrismaClient } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-  });
+// Logs minimalistas por defecto (solo errores). El `query` log en dev añadía
+// cientos de líneas por request — útil para debugging puntual pero un drag de
+// CPU + IO en cualquier página con varias queries. Re-actívalo manualmente con
+// PRISMA_VERBOSE=1 cuando necesites inspeccionar SQL.
+const prismaLog: ('query' | 'error' | 'warn')[] =
+  process.env.PRISMA_VERBOSE === '1' ? ['query', 'error', 'warn'] : ['error'];
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({ log: prismaLog });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 

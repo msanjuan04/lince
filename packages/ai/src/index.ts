@@ -17,6 +17,12 @@ export { computeOpportunityFacts } from './valuator';
 export type { PropertyFactsInput, OpportunityFacts, FactTag, TagTone } from './valuator';
 export { computeFlipEstimate, LEGAL_COSTS, FLIP_DEFAULTS } from './flip-estimator';
 export type { FlipInputs, FlipEstimate } from './flip-estimator';
+export {
+  classifyForFlipper,
+  FLIPPER_HARD_BLOCK_FLAGS,
+  FLIPPER_SOFT_WARN_FLAGS,
+} from './flipper-eligibility';
+export type { FlipperEligibility, FlipperEligibilityStatus } from './flipper-eligibility';
 export { analyzePropertyPhoto, VISION_SYSTEM_PROMPT } from './vision-analyzer';
 export type {
   VisionAnalyzerInput,

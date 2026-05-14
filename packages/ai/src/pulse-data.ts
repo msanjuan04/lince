@@ -8,6 +8,7 @@ import type {
   PulseReaderRole,
   PulseZoneStats,
 } from './prompts/pulse-agent';
+import { classifyForFlipper } from './flipper-eligibility';
 
 export interface LoadPulseDataOptions {
   /** Cuántas propiedades mete en el informe. Default 10. El prompt usa max 5 en el "top" — el resto da contexto al panorama. */
@@ -35,11 +36,29 @@ export async function loadPulseData(opts: LoadPulseDataOptions): Promise<PulseRe
       : {}),
   };
 
-  const properties = await prisma.property.findMany({
+  // Sobre-leemos cuando el rol es flipper para que el filtro post-fetch
+  // (excluir propiedades con flags incompatibles con flip rápido) no nos deje
+  // por debajo de topN. Factor x4 cubre el caso peor visto en producción
+  // (>70% del top con flag `occupied` en CPs bank-owned).
+  const fetchLimit = opts.readerRole === 'flipper' ? topN * 4 : topN;
+
+  const rawProperties = await prisma.property.findMany({
     where,
-    orderBy: [{ opportunityScore: 'desc' }, { firstSeen: 'desc' }],
-    take: topN,
+    // En Postgres, ORDER BY ... DESC pone NULL primero por defecto. Forzamos
+    // NULLS LAST para que las propiedades sin score (sin mediana suficiente
+    // del bucket+CP) queden al final, no al principio.
+    orderBy: [{ opportunityScore: { sort: 'desc', nulls: 'last' } }, { firstSeen: 'desc' }],
+    take: fetchLimit,
   });
+
+  // Filtro flipper: excluye okupa, inquilino, VPO, sin licencia y combinaciones
+  // 2+ flags soft. El resto pasa intacto (incluso con score más bajo).
+  const properties =
+    opts.readerRole === 'flipper'
+      ? rawProperties
+          .filter((p) => classifyForFlipper(p.redFlags ?? []).status !== 'excluded')
+          .slice(0, topN)
+      : rawProperties.slice(0, topN);
 
   const items: PulsePropertyInput[] = properties.map((p) => {
     const rawData = (p.rawData as Record<string, unknown> | null) ?? null;
