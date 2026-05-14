@@ -67,12 +67,92 @@ export function SystemStatus({ status }: SystemStatusProps) {
             failText="Sin conexión — revisa DATABASE_URL/DIRECT_URL en .env.local"
           />
           <HealthRow
+            ok={status.anthropicConfigured}
+            label="Anthropic Claude API"
+            okText="Configurado — Pulse Agent operativo"
+            failText="Sin ANTHROPIC_API_KEY — Pulse en modo dry"
+          />
+          <HealthRow
+            ok={status.telegramConfigured}
+            label="Telegram Bot (dispatch del Pulse)"
+            okText="Configurado — bot operativo"
+            failText="Sin TELEGRAM_BOT_TOKEN — Pulse no se enviará"
+          />
+          <HealthRow
             ok={status.whatsappCredentialsPresent}
-            label="WhatsApp Cloud API (Meta)"
+            label="WhatsApp Cloud API (Meta) — pausado"
             okText={`Configurado · phone_number_id ${status.whatsappPhoneNumberId?.slice(0, 8)}…`}
             failText="Sin WHATSAPP_ACCESS_TOKEN o WHATSAPP_PHONE_NUMBER_ID — modo dry"
           />
         </ul>
+      </div>
+
+      {/* Jobs automatizados */}
+      <div className="border-border flex flex-col gap-3 border-t pt-5">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-sm font-medium">Jobs automatizados</h3>
+          <span className="text-muted-foreground text-xs">
+            Última ejecución conocida por cada job. Para arrancar el scheduler:{' '}
+            <code className="font-mono">pnpm --filter @lince/scheduler start</code>
+          </span>
+        </div>
+        {status.jobsLastRun.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No hay ejecuciones registradas todavía. El scheduler creará entradas en{' '}
+            <code className="font-mono">crawler_runs</code> según vaya disparando los crons.
+          </p>
+        ) : (
+          <table className="border-border w-full border-collapse border text-sm">
+            <thead>
+              <tr className="border-border bg-accent/30 border-b text-left">
+                <th className="px-3 py-2 text-xs font-medium uppercase tracking-wide">Job</th>
+                <th className="px-3 py-2 text-xs font-medium uppercase tracking-wide">Status</th>
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide">
+                  Resultado
+                </th>
+                <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide">
+                  Última ejecución
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.jobsLastRun.map((j) => (
+                <tr key={j.source} className="border-border border-b last:border-b-0">
+                  <td className="px-3 py-2 font-mono text-xs">{j.source}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={cn(
+                        'inline-flex items-center text-xs font-medium',
+                        j.status === 'ok'
+                          ? 'text-highlight'
+                          : j.status === 'partial'
+                            ? 'text-foreground'
+                            : 'text-muted-foreground',
+                      )}
+                    >
+                      {j.status ?? '—'}
+                    </span>
+                  </td>
+                  <td className="text-muted-foreground px-3 py-2 text-right tabular-nums">
+                    {j.propertiesFound !== null
+                      ? `${j.propertiesFound} encontradas · ${j.propertiesNew ?? 0} nuevas`
+                      : '—'}
+                    {j.errorsCount > 0 ? (
+                      <span className="text-destructive ml-2">· {j.errorsCount} err</span>
+                    ) : null}
+                  </td>
+                  <td className="text-muted-foreground px-3 py-2 text-right text-xs tabular-nums">
+                    {j.endedAt
+                      ? formatRelativeDate(j.endedAt)
+                      : j.startedAt
+                        ? `${formatRelativeDate(j.startedAt)} (running)`
+                        : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Test WhatsApp */}

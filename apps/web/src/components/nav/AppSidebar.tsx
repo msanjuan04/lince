@@ -32,6 +32,9 @@ import {
 import type { Agency, User } from '@/lib/data/types';
 import { UserMenu } from './UserMenu';
 
+// Producto interno-flipper: ocultamos Captures y Listings (sobran para flip
+// directo, son para inmobiliarias). Las páginas siguen accesibles por URL
+// directa por si las necesitamos para algo, pero no entran en el menú.
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/oportunidades', label: 'Oportunidades', icon: ScanSearch },
@@ -40,8 +43,6 @@ const NAV_ITEMS = [
   { href: '/informe', label: 'Informe Pulse', icon: FileText },
   { href: '/zonas', label: 'Zonas', icon: Map },
   { href: '/alertas', label: 'Alertas', icon: Bell },
-  { href: '/captures', label: 'Captures', icon: Handshake },
-  { href: '/listings', label: 'Listings', icon: Tag },
   { href: '/configuracion', label: 'Configuración', icon: Settings },
 ] as const;
 

@@ -39,6 +39,8 @@ const PRICE_OPTIONS = [
 ];
 
 const SORT_OPTIONS = [
+  { value: 'flip_margin_eur', label: 'Mayor margen flip €' },
+  { value: 'flip_margin_pct', label: 'Mayor margen flip %' },
   { value: 'score', label: 'Mejor score' },
   { value: 'delta', label: 'Mayor Δ vs zona' },
   { value: 'price_asc', label: 'Precio: menor primero' },

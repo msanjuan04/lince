@@ -173,11 +173,20 @@ model Property {
   firstSeen         DateTime @default(now()) @map("first_seen") @db.Timestamptz()
   lastSeen          DateTime @default(now()) @map("last_seen") @db.Timestamptz()
 
+  /// Fecha en que el crawler dejó de ver la propiedad (>7 días desde el último
+  /// crawl que la encontró). Proxy de "vendida o retirada del mercado".
+  /// Null = todavía activa en el inventario.
+  disappearedAt          DateTime? @map("disappeared_at") @db.Timestamptz()
+  /// Días entre firstSeen y disappearedAt. Calculado cuando se marca como
+  /// desaparecida. Usado para mediana de absorción por CP+bucket.
+  daysOnMarketObserved   Int?      @map("days_on_market_observed")
+
   captures Capture[]
 
   priceHistory       PriceHistory[]
   descriptionHistory DescriptionHistory[]
   tracks             PropertyTrack[]
+  visualAnalyses     PropertyVisualAnalysis[]
 
   @@unique([source, sourceId])
   @@index([postalCode])
@@ -185,6 +194,7 @@ model Property {
   @@index([lat, lng])
   @@index([isAuction])
   @@index([isBankOwned])
+  @@index([disappearedAt])
   @@map("properties")
 }
 
@@ -429,6 +439,49 @@ model ListingLead {
 // --------------------------------------------------------------------------
 // Auditoría
 // --------------------------------------------------------------------------
+
+/**
+ * Análisis visual de la foto principal de una propiedad hecho por Claude Vision.
+ * Una propiedad puede tener N análisis (re-analizar si cambia la foto, o si
+ * mejoramos el prompt). El sistema usa el más reciente.
+ *
+ * Política: NO se guarda la imagen, solo su URL y el análisis. Si la URL deja
+ * de servir, el análisis queda como histórico.
+ */
+model PropertyVisualAnalysis {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  propertyId      String   @map("property_id") @db.Uuid
+  imageUrl        String   @map("image_url") @db.Text
+  /// Modelo usado (claude-sonnet-4-5, etc) — para auditoría cuando cambiemos.
+  modelId         String   @map("model_id")
+  /// Versión del prompt — bump cuando cambiemos el sistema.
+  promptVersion   String   @map("prompt_version")
+  /// Score 0-100 de estado general (más alto = mejor estado).
+  conditionScore  Int?     @map("condition_score")
+  /// "needs_reform", "partial_reform", "good", "recently_reformed", "new", "unknown"
+  conditionLabel  String?  @map("condition_label")
+  /// €/m² de reforma estimado por Claude basándose en lo que ve. Null si no estimable.
+  reformCostPerM2 Decimal? @map("reform_cost_per_m2") @db.Decimal(8, 2)
+  /// Elementos detectados que necesitan reforma (cocina, baño, suelos, ventanas…).
+  elementsToReform String[] @map("elements_to_reform")
+  /// Banderas rojas visuales (humedad, vigas vistas, derramas, etc).
+  visualRedFlags  String[] @map("visual_red_flags")
+  /// "professional" o "amateur" — proxy de tipo de vendedor.
+  photoQuality    String?  @map("photo_quality")
+  /// Resumen narrativo del análisis (2-3 líneas).
+  summary         String?  @db.Text
+  /// JSON completo de la respuesta (para inspección o reprocesar).
+  rawResponse     Json     @map("raw_response") @db.JsonB
+  tokensIn        Int      @map("tokens_in")
+  tokensOut       Int      @map("tokens_out")
+  costEur         Decimal  @map("cost_eur") @db.Decimal(8, 4)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, createdAt(sort: Desc)])
+  @@map("property_visual_analyses")
+}
 
 model CrawlerRun {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

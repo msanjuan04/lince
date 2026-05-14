@@ -86,7 +86,15 @@ export interface OpportunityFilters {
   origin?: 'auction' | 'bank_owned' | 'private' | null;
   excludeRedFlags?: boolean;
   onlyIds?: string[];
-  sort?: 'score' | 'delta' | 'price_asc' | 'price_desc' | 'eurm2_asc' | 'new';
+  sort?:
+    | 'score'
+    | 'delta'
+    | 'price_asc'
+    | 'price_desc'
+    | 'eurm2_asc'
+    | 'new'
+    | 'flip_margin_eur'
+    | 'flip_margin_pct';
 }
 
 export async function getOpportunities(filters: OpportunityFilters = {}): Promise<Property[]> {

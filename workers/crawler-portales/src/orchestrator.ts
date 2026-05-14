@@ -1,8 +1,20 @@
 // Orquestador: ejecuta un crawler de una fuente, persiste cada propiedad vía
 // upsert, registra una fila en `crawler_runs` con contadores y errores.
+//
+// Filtro de universo: descartamos cualquier propiedad cuyo CP NO esté en el
+// dataset del informe de mercado (AMB + Maresme costa + Vallès Occidental).
+// Esto convierte Lince en herramienta hyperlocal centrada en flipping.
 
-import { crawlerRunsRepo, propertiesRepo } from '@lince/db';
+import { crawlerRunsRepo, propertiesRepo, getAllUniversePostalCodes } from '@lince/db';
 import type { CrawlOptions, CrawlerSource, CrawlErrorRecord, Logger } from './sources/types';
+
+/** Set de CPs que Lince acepta. Se inicializa una vez al cargar el módulo. */
+const UNIVERSE_POSTAL_CODES = new Set(getAllUniversePostalCodes());
+
+function isInUniverse(postalCode: string | null | undefined): boolean {
+  if (!postalCode) return false;
+  return UNIVERSE_POSTAL_CODES.has(postalCode);
+}
 
 export type OrchestratorResult = {
   runId: string;
@@ -26,6 +38,7 @@ export async function runSource(
   let propertiesNew = 0;
   let propertiesUpdated = 0;
   let propertiesFound = 0;
+  let propertiesOutOfUniverse = 0;
   const errors: CrawlErrorRecord[] = [];
 
   try {
@@ -34,6 +47,11 @@ export async function runSource(
     errors.push(...outcome.errors);
 
     for (const { property } of outcome.results) {
+      // Filtro universo: descartar propiedades fuera del set de CPs del informe.
+      if (!isInUniverse(property.postalCode)) {
+        propertiesOutOfUniverse += 1;
+        continue;
+      }
       try {
         const result = await propertiesRepo.upsertProperty(property);
         if (result.isNew) propertiesNew += 1;
@@ -46,6 +64,11 @@ export async function runSource(
           at: new Date().toISOString(),
         });
       }
+    }
+    if (propertiesOutOfUniverse > 0) {
+      log.info(
+        `[run ${run.id}] ${propertiesOutOfUniverse} propiedades descartadas por CP fuera del universo`,
+      );
     }
   } catch (err) {
     errors.push({
@@ -67,7 +90,7 @@ export async function runSource(
 
   const durationMs = Date.now() - run.startedAt.getTime();
   log.info(
-    `[run ${run.id}] done source=${source.name} found=${propertiesFound} new=${propertiesNew} updated=${propertiesUpdated} errs=${errors.length} duration=${durationMs}ms`,
+    `[run ${run.id}] done source=${source.name} found=${propertiesFound} new=${propertiesNew} updated=${propertiesUpdated} skipped_out_of_universe=${propertiesOutOfUniverse} errs=${errors.length} duration=${durationMs}ms`,
   );
 
   return {

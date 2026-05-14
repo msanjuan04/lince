@@ -22,7 +22,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# IDE
+# IDE / agent local
+.claude/
 .vscode/
 .idea/
 *.swp

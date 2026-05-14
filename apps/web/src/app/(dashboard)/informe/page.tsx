@@ -7,6 +7,7 @@ import { pulseReportsRepo } from '@lince/db';
 import { DEMO_AGENCY_ID } from '@/lib/data/mocks/agency';
 import { formatRelativeDate } from '@/lib/format';
 import { GenerateButton } from './_components/GenerateButton';
+import { SendToTelegramButton } from './_components/SendToTelegramButton';
 
 export const metadata: Metadata = { title: 'Informe Pulse' };
 
@@ -46,7 +47,12 @@ export default async function InformePage() {
         title="Informe Pulse"
         description="Análisis narrado del agente Claude con oferta sugerida y argumentos"
         meta={latest ? `Semana del ${latest.weekOf.toISOString().slice(0, 10)}` : undefined}
-        actions={<GenerateButton />}
+        actions={
+          <div className="flex items-center gap-2">
+            {latest && !latest.dryRun ? <SendToTelegramButton reportId={latest.id} /> : null}
+            <GenerateButton />
+          </div>
+        }
       />
       <div className="flex flex-1 flex-col gap-10 p-6 sm:gap-12 sm:p-10">
         {latest ? (

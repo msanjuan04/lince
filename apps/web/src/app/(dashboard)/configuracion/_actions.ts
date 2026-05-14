@@ -67,11 +67,24 @@ export async function testWhatsAppAction(phoneRaw: string): Promise<TestWhatsApp
   };
 }
 
+export interface JobRunSummary {
+  source: string;
+  status: string | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  propertiesFound: number | null;
+  propertiesNew: number | null;
+  propertiesUpdated: number | null;
+  errorsCount: number;
+}
+
 export interface SystemStatus {
   db: 'ok' | 'fail';
   whatsappCredentialsPresent: boolean;
   whatsappPhoneNumberId: string | null;
   whatsappBusinessAccountId: string | null;
+  telegramConfigured: boolean;
+  anthropicConfigured: boolean;
   totalProperties: number;
   totalZones: number;
   totalTracked: number;
@@ -79,6 +92,8 @@ export interface SystemStatus {
   totalAlertsSent: number;
   lastCrawlerRunAt: Date | null;
   lastCrawlerRunSource: string | null;
+  /** Última ejecución conocida por cada job kind (pisos, boe, solvia, pulse-dispatch, etc). */
+  jobsLastRun: JobRunSummary[];
 }
 
 export async function getSystemStatusAction(): Promise<SystemStatus> {
@@ -90,9 +105,10 @@ export async function getSystemStatusAction(): Promise<SystemStatus> {
   let totalAlertsSent = 0;
   let lastCrawlerRunAt: Date | null = null;
   let lastCrawlerRunSource: string | null = null;
+  let jobsLastRun: JobRunSummary[] = [];
 
   try {
-    const [props, zones, tracks, pending, sent, lastRun] = await Promise.all([
+    const [props, zones, tracks, pending, sent, lastRun, latestPerSource] = await Promise.all([
       prisma.property.count(),
       prisma.zone.count(),
       prisma.propertyTrack.count(),
@@ -102,6 +118,38 @@ export async function getSystemStatusAction(): Promise<SystemStatus> {
         orderBy: { startedAt: 'desc' },
         select: { source: true, endedAt: true, startedAt: true },
       }),
+      // Última ejecución conocida por cada source (groupBy + take 1 por grupo
+      // no es trivial en Prisma; lo resolvemos con queryRaw simple).
+      prisma.$queryRaw<
+        Array<{
+          source: string;
+          status: string | null;
+          started_at: Date | null;
+          ended_at: Date | null;
+          properties_found: number | null;
+          properties_new: number | null;
+          properties_updated: number | null;
+          errors_count: number;
+        }>
+      >`
+        WITH ranked AS (
+          SELECT
+            source,
+            status,
+            started_at,
+            ended_at,
+            properties_found,
+            properties_new,
+            properties_updated,
+            COALESCE(jsonb_array_length(errors), 0) AS errors_count,
+            ROW_NUMBER() OVER (PARTITION BY source ORDER BY started_at DESC) AS rn
+          FROM crawler_runs
+        )
+        SELECT source, status, started_at, ended_at, properties_found, properties_new, properties_updated, errors_count
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY started_at DESC
+      `,
     ]);
     totalProperties = props;
     totalZones = zones;
@@ -112,6 +160,16 @@ export async function getSystemStatusAction(): Promise<SystemStatus> {
       lastCrawlerRunAt = lastRun.endedAt ?? lastRun.startedAt;
       lastCrawlerRunSource = lastRun.source;
     }
+    jobsLastRun = latestPerSource.map((r) => ({
+      source: r.source,
+      status: r.status,
+      startedAt: r.started_at,
+      endedAt: r.ended_at,
+      propertiesFound: r.properties_found,
+      propertiesNew: r.properties_new,
+      propertiesUpdated: r.properties_updated,
+      errorsCount: Number(r.errors_count ?? 0),
+    }));
   } catch {
     db = 'fail';
   }
@@ -121,6 +179,8 @@ export async function getSystemStatusAction(): Promise<SystemStatus> {
     whatsappCredentialsPresent: !!getWhatsAppConfigFromEnv(),
     whatsappPhoneNumberId: process.env['WHATSAPP_PHONE_NUMBER_ID'] ?? null,
     whatsappBusinessAccountId: process.env['WHATSAPP_BUSINESS_ACCOUNT_ID'] ?? null,
+    telegramConfigured: !!process.env['TELEGRAM_BOT_TOKEN'],
+    anthropicConfigured: !!process.env['ANTHROPIC_API_KEY'],
     totalProperties,
     totalZones,
     totalTracked,
@@ -128,5 +188,6 @@ export async function getSystemStatusAction(): Promise<SystemStatus> {
     totalAlertsSent,
     lastCrawlerRunAt,
     lastCrawlerRunSource,
+    jobsLastRun,
   };
 }

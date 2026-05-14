@@ -19,6 +19,8 @@ import {
 } from '@lince/crawler-portales';
 import { runEnrichCatastro, type EnrichCatastroResult } from './enrich-catastro';
 import { runEvaluateZones, type EvaluateZonesResult } from './evaluate-zones';
+import { runDetectDisappeared, type DetectDisappearedResult } from './detect-disappeared';
+import { runAnalyzePhotos, type AnalyzePhotosResult } from './analyze-photos';
 
 export interface WeeklySnapshotOptions {
   /** Fuentes a ejecutar (orden importa). Por defecto: pisos, boe, solvia. */
@@ -31,6 +33,10 @@ export interface WeeklySnapshotOptions {
   enrichCatastro?: boolean;
   /** Si true, evalúa zonas y dispara alertas. Default true. */
   evaluateZones?: boolean;
+  /** Si true, marca propiedades desaparecidas (alimenta mediana absorción). Default true. */
+  detectDisappeared?: boolean;
+  /** Si true, ejecuta Claude Vision sobre top N props pendientes. Default true. */
+  analyzePhotos?: boolean;
 }
 
 export interface WeeklySnapshotResult {
@@ -40,6 +46,8 @@ export interface WeeklySnapshotResult {
   runs: OrchestratorResult[];
   enrichCatastro?: EnrichCatastroResult;
   evaluateZones?: EvaluateZonesResult;
+  detectDisappeared?: DetectDisappearedResult;
+  analyzePhotos?: AnalyzePhotosResult;
   totals: {
     propertiesFound: number;
     propertiesNew: number;
@@ -108,6 +116,34 @@ export async function runWeeklySnapshot(
     }
   }
 
+  // Detectar propiedades desaparecidas → alimenta mediana de absorción.
+  let detectDisappeared: DetectDisappearedResult | undefined;
+  if (opts.detectDisappeared !== false) {
+    try {
+      console.log('\n[weekly-snapshot] arrancando detect-disappeared...');
+      detectDisappeared = await runDetectDisappeared();
+      console.log(
+        `[detect-disappeared] marcadas ${detectDisappeared.markedDisappeared} propiedades en ${detectDisappeared.processedSources} fuentes`,
+      );
+    } catch (err) {
+      console.error('[weekly-snapshot] detect-disappeared FATAL:', err);
+    }
+  }
+
+  // Análisis visual de fotos con Claude Vision (top N pendientes).
+  let analyzePhotos: AnalyzePhotosResult | undefined;
+  if (opts.analyzePhotos !== false && process.env['ANTHROPIC_API_KEY']) {
+    try {
+      console.log('\n[weekly-snapshot] arrancando analyze-photos (Claude Vision)...');
+      analyzePhotos = await runAnalyzePhotos();
+      console.log(
+        `[analyze-photos] ${analyzePhotos.analyzed} analizadas, ${analyzePhotos.failed} fallos, coste ${analyzePhotos.totalCostEur}€`,
+      );
+    } catch (err) {
+      console.error('[weekly-snapshot] analyze-photos FATAL:', err);
+    }
+  }
+
   const endedAt = new Date();
   const durationMs = endedAt.getTime() - startedAt.getTime();
 
@@ -135,7 +171,27 @@ export async function runWeeklySnapshot(
       `  Zone alerts: ${evaluateZones.alertsCreated} created · ${evaluateZones.alertsSent} sent · ${evaluateZones.alertsSkipped} skipped · ${evaluateZones.alertsFailed} failed`,
     );
   }
+  if (detectDisappeared) {
+    console.log(
+      `  Detect-disappeared: ${detectDisappeared.markedDisappeared} marcadas en ${detectDisappeared.processedSources} fuentes`,
+    );
+  }
+  if (analyzePhotos) {
+    console.log(
+      `  Vision: ${analyzePhotos.analyzed} analizadas · ${analyzePhotos.failed} fallos · coste ${analyzePhotos.totalCostEur}€`,
+    );
+  }
   console.log('');
 
-  return { startedAt, endedAt, durationMs, runs, enrichCatastro, evaluateZones, totals };
+  return {
+    startedAt,
+    endedAt,
+    durationMs,
+    runs,
+    enrichCatastro,
+    evaluateZones,
+    detectDisappeared,
+    analyzePhotos,
+    totals,
+  };
 }

@@ -73,7 +73,9 @@ export default async function OportunidadesPage({ searchParams }: PageProps) {
     params.sort === 'price_desc' ||
     params.sort === 'eurm2_asc' ||
     params.sort === 'new' ||
-    params.sort === 'score'
+    params.sort === 'score' ||
+    params.sort === 'flip_margin_eur' ||
+    params.sort === 'flip_margin_pct'
   ) {
     filters.sort = params.sort;
   }

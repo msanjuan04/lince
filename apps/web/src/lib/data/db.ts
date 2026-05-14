@@ -9,8 +9,35 @@
 //   - El type, source y city tampoco tienen fallback inventado. Si no se
 //     puede determinar, viene como null y la UI muestra `—`.
 
-import { prisma, Prisma, type Property as PrismaProperty } from '@lince/db';
-import type { PriceHistoryEntry, Property, PropertySource, PropertyType } from './types';
+import {
+  prisma,
+  Prisma,
+  type Property as PrismaProperty,
+  zoneStatsRepo,
+  priceHistorySummaryRepo,
+  absorptionRepo,
+  visualAnalysesRepo,
+  bucketOf,
+  absorptionKey,
+  type ZoneStats,
+  type PriceHistorySummary,
+  type AbsorptionStat,
+  getReferenceByPostalCode,
+  estimateSalePricePerM2FromReference,
+  type MarketReferenceEntry,
+} from '@lince/db';
+import { computeOpportunityFacts, computeFlipEstimate, FLIP_DEFAULTS } from '@lince/ai';
+import type {
+  AbsorptionView,
+  FlipEstimateView,
+  MarketReference,
+  ObservedHistory,
+  PriceHistoryEntry,
+  Property,
+  PropertySource,
+  PropertyType,
+  VisualAnalysisView,
+} from './types';
 
 const VALID_SOURCES: PropertySource[] = [
   'idealista',
@@ -65,12 +92,6 @@ const TYPE_ALIASES: Record<string, PropertyType> = {
   trastero: 'local',
 };
 
-const MIN_ZONE_SAMPLE = 3; // mínimo de propiedades en CP para considerar la media como referencia
-
-function clampScore(n: number): number {
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
-
 function mapType(raw: string | null): PropertyType | null {
   if (!raw) return null;
   const key = raw.toLowerCase().trim();
@@ -99,68 +120,213 @@ function mapStatus(raw: string | null): Property['status'] {
 }
 
 /**
- * Devuelve, para cada CP en la DB, { avgEurM2, count }. Solo considera CPs
- * con al menos MIN_ZONE_SAMPLE propiedades (estadísticamente significativo).
- * Excluye subastas para no sesgar a la baja.
+ * Snapshot agregado de toda la DB que se calcula UNA vez por fetch y se reusa
+ * para todas las propiedades. Cada parte es una query agregada barata sobre
+ * datos REALES — sin pesos ni heurísticas inventadas.
  */
-async function getZoneStatsByCp(): Promise<Map<string, { avgEurM2: number; count: number }>> {
-  const rows = await prisma.$queryRawUnsafe<
-    Array<{ postal_code: string; avg_eur_m2: number; n: bigint }>
-  >(`
-    SELECT postal_code,
-           AVG(price_per_m2)::float AS avg_eur_m2,
-           COUNT(*)::bigint AS n
-    FROM properties
-    WHERE postal_code IS NOT NULL
-      AND price_per_m2 IS NOT NULL
-      AND is_auction = false
-    GROUP BY postal_code
-  `);
-  const map = new Map<string, { avgEurM2: number; count: number }>();
-  for (const r of rows) {
-    const n = Number(r.n);
-    if (r.avg_eur_m2 > 500 && r.avg_eur_m2 < 20_000) {
-      map.set(r.postal_code, { avgEurM2: Math.round(r.avg_eur_m2), count: n });
+interface DataSnapshot {
+  zoneStats: Map<string, ZoneStats>;
+  priceHistorySummaries: Map<string, PriceHistorySummary>;
+  absorption: Map<string, AbsorptionStat>;
+}
+
+async function loadSnapshot(): Promise<DataSnapshot> {
+  const [zoneStats, priceHistorySummaries, absorption] = await Promise.all([
+    zoneStatsRepo.getZoneStatsMap(),
+    priceHistorySummaryRepo.getPriceHistorySummaryMap(),
+    absorptionRepo.getAbsorptionMap(),
+  ]);
+  return { zoneStats, priceHistorySummaries, absorption };
+}
+
+/**
+ * Construye el `ObservedHistory` desde la fila + resumen del repo. Nombre
+ * deliberado: `daysObservedByLince` ≠ días en mercado real. Si no hay summary,
+ * todo a cero/null — la propiedad no tiene rebajas detectadas.
+ */
+function buildObservedHistory(
+  row: PrismaProperty,
+  summary: PriceHistorySummary | undefined,
+): ObservedHistory {
+  const now = Date.now();
+  const daysObservedByLince = Math.max(
+    0,
+    Math.floor((now - row.firstSeen.getTime()) / (1000 * 60 * 60 * 24)),
+  );
+  if (!summary) {
+    return { daysObservedByLince, dropCount: 0, dropTotalPct: 0, daysSinceLastDrop: null };
+  }
+  return {
+    daysObservedByLince,
+    dropCount: summary.dropCount,
+    dropTotalPct: summary.dropTotalPct,
+    daysSinceLastDrop: summary.daysSinceLastDrop,
+  };
+}
+
+/**
+ * Construye la vista de estimación flip para una propiedad. Usa defaults
+ * razonables:
+ *   - €/m² reforma = 700 (placeholder, override por usuario)
+ *   - Precio salida = referencia del informe con 10% safety margin
+ *   - monthsToSell = mediana absorción real del CP+bucket si hay muestra ≥3,
+ *     null si no — entonces el ciclo y anualizado salen como "no calculable".
+ */
+function buildFlipEstimateView(opts: {
+  price: number | null;
+  m2: number | null;
+  postalCode: string | null;
+  bucket: 'auction' | 'bank_owned' | 'portal';
+  bucketMedianEurM2: number | null;
+  absorptionMap: Map<string, AbsorptionStat>;
+}): FlipEstimateView | null {
+  if (opts.price === null || opts.m2 === null) {
+    return null;
+  }
+
+  // Precio salida: referencia del informe con safety margin (10%).
+  const fromRef = estimateSalePricePerM2FromReference(opts.postalCode, {
+    safetyMarginPct: FLIP_DEFAULTS.saleSafetyMarginPct,
+  });
+  const expectedSaleEurM2 = fromRef?.eurM2 ?? null;
+  const expectedSaleSource = fromRef
+    ? `${fromRef.entry.municipality}${fromRef.entry.district ? ' / ' + fromRef.entry.district : ''} (${fromRef.source}, -10% safety)`
+    : null;
+
+  // monthsToSell: mediana absorción real del CP+bucket si ≥3 muestras
+  // disponibles. Si no, null y el sistema lo dice claramente.
+  let monthsToSell: number | null = null;
+  if (opts.postalCode) {
+    const key = absorptionKey(opts.postalCode, opts.bucket);
+    const stat = opts.absorptionMap.get(key);
+    if (stat) {
+      // medianDays → meses (división por 30 redondeada).
+      monthsToSell = Math.max(1, Math.round(stat.medianDays / 30));
     }
   }
-  return map;
+
+  const result = computeFlipEstimate({
+    listPrice: opts.price,
+    m2: opts.m2,
+    eurM2Reform: FLIP_DEFAULTS.eurM2Reform,
+    expectedSaleEurM2,
+    expectedSaleSource,
+    monthsToSell,
+  });
+
+  return {
+    acquisitionCostTotal: result.acquisitionCostTotal,
+    reformCost: result.reformCost,
+    totalInvestment: result.totalInvestment,
+    expectedSalePrice: result.expectedSalePrice,
+    expectedSaleEurM2,
+    expectedSaleSource,
+    netSaleProceeds: result.netSaleProceeds,
+    grossMarginEur: result.grossMarginEur,
+    grossMarginPct: result.grossMarginPct,
+    cycleMonths: result.cycleMonths,
+    annualizedMarginPct: result.annualizedMarginPct,
+    reasons: result.reasons,
+    breakdown: result.breakdown,
+    params: {
+      eurM2Reform: FLIP_DEFAULTS.eurM2Reform,
+      monthsToSell,
+    },
+  };
 }
 
-/** Score heurístico: cuanto más por debajo de la mediana, mayor el score. */
-function computeScore(pricePerM2: number, zoneAvg: number, isAuction: boolean): number {
-  if (zoneAvg <= 0) return 0;
-  const delta = (zoneAvg - pricePerM2) / zoneAvg;
-  let score = clampScore(delta * 200);
-  if (isAuction) score = clampScore(score + 15);
-  return score;
+function buildMarketReferenceView(entry: MarketReferenceEntry | null): MarketReference | null {
+  if (!entry) return null;
+  return {
+    municipality: entry.municipality,
+    district: entry.district,
+    avgEurM2: entry.avgEurM2,
+    premiumEurM2: entry.premiumEurM2,
+    yoyPct: entry.yoyPct,
+    tier: entry.tier,
+    momentum: entry.momentum,
+    source: entry.source,
+    ...(entry.notes ? { notes: entry.notes } : {}),
+  };
 }
 
-/** Adaptador honesto Prisma → UI. */
-function adapt(
-  row: PrismaProperty,
-  zoneStatsByCp: Map<string, { avgEurM2: number; count: number }>,
-): Property {
+/** Adaptador honesto Prisma → UI. Cero números inventados. */
+function adapt(row: PrismaProperty, snap: DataSnapshot): Property {
   const { source, label } = mapSource(row.source);
   const pricePerM2 = row.pricePerM2 ? Number(row.pricePerM2) : null;
   const price = row.price ? Number(row.price) : null;
   const isAuction = row.isAuction === true;
+  const isBankOwned = row.isBankOwned === true;
   const postalCode = row.postalCode ?? null;
 
-  // Zona: solo si hay muestra suficiente
-  const zoneStat = postalCode ? zoneStatsByCp.get(postalCode) : undefined;
-  const zoneAvgPricePerM2 =
-    zoneStat && zoneStat.count >= MIN_ZONE_SAMPLE ? zoneStat.avgEurM2 : null;
-  const zoneSampleSize = zoneStat?.count ?? 0;
+  // Estadísticas reales del CP
+  const zoneStat = postalCode ? snap.zoneStats.get(postalCode) : undefined;
+  const zoneAvgPricePerM2 = zoneStat?.medianEurM2 ?? null;
+  const zoneSampleSize = zoneStat?.totalCount ?? 0;
 
+  // Mediana del bucket al que pertenece esta propiedad — base del score.
+  const bucket = bucketOf({ isAuction, isBankOwned });
+  const bucketStat = zoneStat?.buckets[bucket];
+  const bucketMedianEurM2 = bucketStat?.medianEurM2 ?? null;
+  const bucketSampleSize = bucketStat?.count ?? 0;
+
+  // Histórico observado (días + rebajas vistas por Lince)
+  const observedHistory = buildObservedHistory(row, snap.priceHistorySummaries.get(row.id));
+
+  // Delta vs mediana global del CP — métrica independiente, contexto extra.
   const zoneDeltaPct =
     pricePerM2 !== null && zoneAvgPricePerM2 !== null && zoneAvgPricePerM2 > 0
       ? (zoneAvgPricePerM2 - pricePerM2) / zoneAvgPricePerM2
       : null;
 
-  const opportunityScore =
-    pricePerM2 !== null && zoneAvgPricePerM2 !== null
-      ? computeScore(pricePerM2, zoneAvgPricePerM2, isAuction)
-      : null;
+  // Referencia de mercado del CP (informe Idealista/Indomio/Fotocasa abril 2026)
+  const refEntry = postalCode ? getReferenceByPostalCode(postalCode) : null;
+  const marketReference = buildMarketReferenceView(refEntry);
+
+  // Estimación flip — usa mediana del crawler si la hay, si no la referencia
+  // del informe. NUNCA inventa. Si falta dato crítico, devuelve null y razón.
+  const flipEstimate = buildFlipEstimateView({
+    price,
+    m2: row.m2,
+    postalCode,
+    bucket,
+    bucketMedianEurM2,
+    absorptionMap: snap.absorption,
+  });
+
+  // Absorción medida — para mostrar en UI con sample size.
+  const absorptionEntry = postalCode
+    ? snap.absorption.get(absorptionKey(postalCode, bucket))
+    : undefined;
+  const absorption: AbsorptionView | null = absorptionEntry
+    ? {
+        medianDays: absorptionEntry.medianDays,
+        sampleSize: absorptionEntry.sampleSize,
+        bucket: absorptionEntry.bucket,
+      }
+    : null;
+
+  // Score honesto: una sola cifra derivada del descuento vs mediana del bucket.
+  const factsResult = computeOpportunityFacts({
+    pricePerM2,
+    bucketMedianEurM2,
+    bucketSampleSize,
+    isAuction,
+    isBankOwned,
+    condition: row.condition,
+    redFlags: row.redFlags ?? [],
+    m2: row.m2,
+    rooms: row.rooms,
+    hasTerrace: row.hasTerrace,
+    hasElevator: row.hasElevator,
+    floor: row.floor,
+    yearBuilt: row.yearBuilt,
+    hiddenPrice: (row.redFlags ?? []).includes('hidden_price'),
+    dropCount: observedHistory.dropCount,
+    dropTotalPct: observedHistory.dropTotalPct,
+    daysObservedByLince: observedHistory.daysObservedByLince,
+    daysSinceLastDrop: observedHistory.daysSinceLastDrop,
+  });
 
   return {
     id: row.id,
@@ -173,7 +339,7 @@ function adapt(
     city: row.city,
     postalCode,
     province: row.province,
-    lat: row.lat, // null si la fuente no la expuso — NO inventamos
+    lat: row.lat,
     lng: row.lng,
     cadastralRef: row.cadastralRef,
     m2: row.m2,
@@ -185,10 +351,21 @@ function adapt(
     zoneAvgPricePerM2,
     zoneSampleSize,
     zoneDeltaPct,
-    opportunityScore,
+    opportunityScore: factsResult.discountScore,
+    discountVsBucketPct: factsResult.discountVsBucketPct,
+    bucketMedianEurM2,
+    bucketSampleSize,
+    scoreReason: factsResult.reason,
+    scoreCaveats: factsResult.caveats,
+    tags: factsResult.tags,
+    observedHistory,
+    marketReference,
+    flipEstimate,
+    absorption,
+    visualAnalysis: null, // se carga solo en fetchPropertyById, no en listados
     status: mapStatus(row.status),
     isAuction,
-    isBankOwned: row.isBankOwned === true,
+    isBankOwned,
     condition: row.condition,
     hasTerrace: row.hasTerrace,
     hasElevator: row.hasElevator,
@@ -206,18 +383,39 @@ function adapt(
 export interface DbOpportunityFilters {
   postalCodes?: string[];
   minScore?: number;
+  /** Capital máximo total disponible (compra + reforma). Filtra por totalInvestment del flipEstimate. */
+  maxTotalInvestment?: number;
+  /** Precio anuncio máximo (antes de ITP / reforma). */
   maxPrice?: number;
+  /** Margen bruto € mínimo del flip. */
+  minGrossMarginEur?: number;
+  /** Margen anualizado mínimo del flip (%). Solo aplica si ciclo es calculable. */
+  minAnnualizedMarginPct?: number;
   minRooms?: number;
+  minM2?: number;
+  maxM2?: number;
   types?: PropertyType[];
   search?: string;
   origin?: 'auction' | 'bank_owned' | 'private' | null;
   excludeRedFlags?: boolean;
+  /** Filtra por tier de zona del informe (A/B/C/D). */
+  tiers?: Array<'A' | 'B' | 'C' | 'D'>;
+  /** Si true, oculta zonas con momentum negativo. */
+  excludeNegativeMomentum?: boolean;
   onlyIds?: string[];
-  sort?: 'score' | 'delta' | 'price_asc' | 'price_desc' | 'eurm2_asc' | 'new';
+  sort?:
+    | 'score'
+    | 'delta'
+    | 'price_asc'
+    | 'price_desc'
+    | 'eurm2_asc'
+    | 'new'
+    | 'flip_margin_eur'
+    | 'flip_margin_pct';
 }
 
 export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Promise<Property[]> {
-  const zoneStatsByCp = await getZoneStatsByCp();
+  const snapshot = await loadSnapshot();
 
   const where: Prisma.PropertyWhereInput = {};
 
@@ -259,7 +457,7 @@ export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Pr
     take: 500,
   });
 
-  let adapted = rows.map((r) => adapt(r, zoneStatsByCp));
+  let adapted = rows.map((r) => adapt(r, snapshot));
 
   if (filters.types && filters.types.length > 0) {
     const setT = new Set(filters.types);
@@ -268,6 +466,48 @@ export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Pr
   if (filters.minScore !== undefined) {
     const min = filters.minScore;
     adapted = adapted.filter((p) => p.opportunityScore !== null && p.opportunityScore >= min);
+  }
+  if (filters.minM2 !== undefined) {
+    const min = filters.minM2;
+    adapted = adapted.filter((p) => p.m2 !== null && p.m2 >= min);
+  }
+  if (filters.maxM2 !== undefined) {
+    const max = filters.maxM2;
+    adapted = adapted.filter((p) => p.m2 !== null && p.m2 <= max);
+  }
+  if (filters.maxTotalInvestment !== undefined) {
+    const max = filters.maxTotalInvestment;
+    adapted = adapted.filter(
+      (p) =>
+        p.flipEstimate?.totalInvestment !== null &&
+        (p.flipEstimate?.totalInvestment ?? Infinity) <= max,
+    );
+  }
+  if (filters.minGrossMarginEur !== undefined) {
+    const min = filters.minGrossMarginEur;
+    adapted = adapted.filter(
+      (p) =>
+        p.flipEstimate?.grossMarginEur !== null &&
+        (p.flipEstimate?.grossMarginEur ?? -Infinity) >= min,
+    );
+  }
+  if (filters.minAnnualizedMarginPct !== undefined) {
+    const min = filters.minAnnualizedMarginPct;
+    adapted = adapted.filter(
+      (p) =>
+        p.flipEstimate?.annualizedMarginPct !== null &&
+        p.flipEstimate?.annualizedMarginPct !== undefined &&
+        p.flipEstimate.annualizedMarginPct >= min,
+    );
+  }
+  if (filters.tiers && filters.tiers.length > 0) {
+    const setTier = new Set(filters.tiers);
+    adapted = adapted.filter(
+      (p) => p.marketReference !== null && setTier.has(p.marketReference.tier),
+    );
+  }
+  if (filters.excludeNegativeMomentum) {
+    adapted = adapted.filter((p) => p.marketReference?.momentum !== 'negative');
   }
 
   // Sort según el criterio elegido.
@@ -287,10 +527,28 @@ export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Pr
         return (a.pricePerM2 ?? Infinity) - (b.pricePerM2 ?? Infinity);
       case 'new':
         return b.firstSeen.getTime() - a.firstSeen.getTime();
+      case 'flip_margin_eur': {
+        const am = a.flipEstimate?.grossMarginEur ?? -Infinity;
+        const bm = b.flipEstimate?.grossMarginEur ?? -Infinity;
+        return bm - am;
+      }
+      case 'flip_margin_pct': {
+        const am = a.flipEstimate?.grossMarginPct ?? -Infinity;
+        const bm = b.flipEstimate?.grossMarginPct ?? -Infinity;
+        return bm - am;
+      }
       case 'score':
       default: {
+        // El score se satura a 100 para descuentos >50%. Si dos propiedades
+        // están saturadas, desempatamos por el descuento real (cifra honesta
+        // sin techo) para que el ranking refleje el dato verificable.
         const aScore = a.opportunityScore ?? -1;
         const bScore = b.opportunityScore ?? -1;
+        if (aScore === bScore) {
+          const aDisc = a.discountVsBucketPct ?? -Infinity;
+          const bDisc = b.discountVsBucketPct ?? -Infinity;
+          return bDisc - aDisc;
+        }
         return bScore - aScore;
       }
     }
@@ -299,9 +557,31 @@ export async function fetchOpportunities(filters: DbOpportunityFilters = {}): Pr
 }
 
 export async function fetchPropertyById(id: string): Promise<Property | null> {
-  const zoneStatsByCp = await getZoneStatsByCp();
-  const row = await prisma.property.findUnique({ where: { id } });
-  return row ? adapt(row, zoneStatsByCp) : null;
+  const [snapshot, row, visual] = await Promise.all([
+    loadSnapshot(),
+    prisma.property.findUnique({ where: { id } }),
+    visualAnalysesRepo.getLatestVisualAnalysis(id),
+  ]);
+  if (!row) return null;
+  const adapted = adapt(row, snapshot);
+  if (visual) {
+    const visualView: VisualAnalysisView = {
+      id: visual.id,
+      imageUrl: visual.imageUrl,
+      conditionScore: visual.conditionScore,
+      conditionLabel: visual.conditionLabel,
+      reformCostPerM2: visual.reformCostPerM2 ? Number(visual.reformCostPerM2) : null,
+      elementsToReform: visual.elementsToReform,
+      visualRedFlags: visual.visualRedFlags,
+      photoQuality: visual.photoQuality,
+      summary: visual.summary,
+      modelId: visual.modelId,
+      costEur: Number(visual.costEur),
+      createdAt: visual.createdAt,
+    };
+    return { ...adapted, visualAnalysis: visualView };
+  }
+  return adapted;
 }
 
 export async function fetchPropertyHistory(propertyId: string): Promise<PriceHistoryEntry[]> {

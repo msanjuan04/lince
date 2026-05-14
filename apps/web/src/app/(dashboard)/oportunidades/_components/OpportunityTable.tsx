@@ -11,7 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { formatEuros, formatPricePerM2, formatRelativeDate } from '@/lib/format';
+import {
+  formatEuros,
+  formatEurosCompact,
+  formatPricePerM2,
+  formatRelativeDate,
+} from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Property } from '@/lib/data/types';
 
@@ -58,6 +63,18 @@ export function OpportunityTable({ properties, trackedSet, onSelect }: Opportuni
             </TableHead>
             <TableHead className="text-muted-foreground hidden h-10 text-right text-xs font-normal lg:table-cell">
               vs zona
+            </TableHead>
+            <TableHead
+              className="text-muted-foreground hidden h-10 text-right text-xs font-normal xl:table-cell"
+              title="Inversión total estimada (compra + ITP + notaría + reforma)"
+            >
+              Inversión
+            </TableHead>
+            <TableHead
+              className="text-muted-foreground hidden h-10 text-right text-xs font-normal xl:table-cell"
+              title="Margen bruto estimado del flip"
+            >
+              Margen flip
             </TableHead>
             <TableHead className="text-muted-foreground hidden h-10 text-xs font-normal md:table-cell">
               Fuente
@@ -165,6 +182,38 @@ function PropertyRow({
         >
           {discountLabel}
         </span>
+      </TableCell>
+      <TableCell className="text-muted-foreground hidden text-right text-sm tabular-nums xl:table-cell">
+        {property.flipEstimate?.totalInvestment !== null &&
+        property.flipEstimate?.totalInvestment !== undefined
+          ? formatEurosCompact(property.flipEstimate.totalInvestment)
+          : '—'}
+      </TableCell>
+      <TableCell className="hidden text-right text-sm tabular-nums xl:table-cell">
+        {property.flipEstimate?.grossMarginEur !== null &&
+        property.flipEstimate?.grossMarginEur !== undefined ? (
+          <div className="flex flex-col items-end leading-tight">
+            <span
+              className={cn(
+                'font-medium',
+                property.flipEstimate.grossMarginEur >= 50_000
+                  ? 'text-highlight'
+                  : property.flipEstimate.grossMarginEur > 0
+                    ? 'text-foreground'
+                    : 'text-muted-foreground',
+              )}
+            >
+              {formatEurosCompact(property.flipEstimate.grossMarginEur)}
+            </span>
+            {property.flipEstimate.grossMarginPct !== null ? (
+              <span className="text-muted-foreground/70 text-[10px]">
+                {(property.flipEstimate.grossMarginPct * 100).toFixed(0)}%
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <span className="text-muted-foreground/60">—</span>
+        )}
       </TableCell>
       <TableCell className="hidden md:table-cell">
         <SourceBadge source={property.source} />

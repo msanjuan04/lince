@@ -309,6 +309,9 @@ importers:
 
   workers/scheduler:
     dependencies:
+      '@lince/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@lince/crawler-portales':
         specifier: workspace:*
         version: link:../crawler-portales

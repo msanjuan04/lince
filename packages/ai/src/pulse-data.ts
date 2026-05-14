@@ -95,19 +95,21 @@ export async function loadPulseData(opts: LoadPulseDataOptions): Promise<PulseRe
   };
 }
 
-/** Mediana €/m² por CP (excluyendo subastas que sesgan a la baja). */
+/**
+ * Mediana real €/m² por CP (PERCENTILE_CONT, no AVG). Excluye subastas para
+ * no sesgar a la baja. Si hay <3 propiedades, no incluimos el CP — la mediana
+ * con muestra tan pequeña no es informativa.
+ */
 async function loadZoneStats(postalCodes: string[]): Promise<PulseZoneStats[]> {
   if (postalCodes.length === 0) return [];
   const unique = Array.from(new Set(postalCodes));
 
-  // Una sola query agregada por CP. Postgres no tiene mediana nativa sin extensión —
-  // usamos AVG para volúmenes bajos. Para >1000 props/CP migrar a PERCENTILE_CONT(0.5).
   const rows = await prisma.$queryRaw<
     Array<{
       postal_code: string;
       city: string | null;
       province: string | null;
-      avg_price_per_m2: number;
+      median_price_per_m2: number | null;
       count: bigint;
     }>
   >`
@@ -115,23 +117,26 @@ async function loadZoneStats(postalCodes: string[]): Promise<PulseZoneStats[]> {
       postal_code,
       MAX(city) AS city,
       MAX(province) AS province,
-      AVG(price_per_m2)::float AS avg_price_per_m2,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_per_m2)::float AS median_price_per_m2,
       COUNT(*) AS count
     FROM properties
     WHERE postal_code = ANY(${unique})
       AND price_per_m2 IS NOT NULL
       AND COALESCE(is_auction, false) = false
     GROUP BY postal_code
+    HAVING COUNT(*) >= 3
     ORDER BY postal_code
   `;
 
-  return rows.map((r) => ({
-    postalCode: r.postal_code,
-    city: r.city,
-    province: r.province,
-    avgPricePerM2: Number(r.avg_price_per_m2),
-    propertyCount: Number(r.count),
-  }));
+  return rows
+    .filter((r) => r.median_price_per_m2 !== null)
+    .map((r) => ({
+      postalCode: r.postal_code,
+      city: r.city,
+      province: r.province,
+      avgPricePerM2: Number(r.median_price_per_m2), // nombre histórico — ahora es mediana
+      propertyCount: Number(r.count),
+    }));
 }
 
 /** Solvia expone `cuotaAlquiler` en `propertyBasicDetail`. Otras fuentes: null por ahora. */

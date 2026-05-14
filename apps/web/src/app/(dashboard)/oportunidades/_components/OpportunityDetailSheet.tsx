@@ -22,8 +22,11 @@ import type { PriceHistoryEntry, Property } from '@/lib/data/types';
 import type { PropertyTrack } from '@/lib/data/tracking-types';
 import { captureProperty } from '../_actions';
 import { FinancialAnalysisSection } from './FinancialAnalysisSection';
+import { FlipAnalysisSection } from './FlipAnalysisSection';
+import { OpportunityFactsPanel } from './OpportunityFactsPanel';
 import { PriceHistorySection } from './PriceHistorySection';
 import { TrackingSection } from './TrackingSection';
+import { VisualAnalysisSection } from './VisualAnalysisSection';
 
 interface OpportunityDetailSheetProps {
   property: Property | null;
@@ -158,14 +161,14 @@ function Body({
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-muted-foreground text-xs">
-                    Media zona ({property.zoneSampleSize})
+                    Mediana CP ({property.zoneSampleSize})
                   </span>
                   <span className="text-muted-foreground font-medium tabular-nums">
                     {formatPricePerM2(property.zoneAvgPricePerM2)}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-muted-foreground text-xs">Δ vs zona</span>
+                  <span className="text-muted-foreground text-xs">Δ vs CP</span>
                   <span
                     className={cn(
                       'text-xl font-medium tabular-nums tracking-[-0.02em]',
@@ -181,21 +184,89 @@ function Body({
                 </div>
               </div>
               <p className="text-muted-foreground text-xs">
-                Media calculada sobre {property.zoneSampleSize} propiedades en CP{' '}
+                Mediana real (PERCENTILE_CONT) sobre {property.zoneSampleSize} propiedades en CP{' '}
                 {property.postalCode}, excluyendo subastas.
               </p>
+              {property.bucketMedianEurM2 !== null &&
+              property.bucketMedianEurM2 !== property.zoneAvgPricePerM2 ? (
+                <div className="border-border mt-2 flex items-baseline justify-between border-t pt-3">
+                  <span className="text-muted-foreground text-xs">
+                    Mediana bucket ({bucketLabel(property)}, n={property.bucketSampleSize})
+                  </span>
+                  <span className="font-mono text-sm tabular-nums">
+                    {formatPricePerM2(property.bucketMedianEurM2)}
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">
-              Sin suficientes propiedades en este CP ({property.zoneSampleSize}) para una media
+              Sin suficientes propiedades en este CP ({property.zoneSampleSize}) para una mediana
               fiable. El análisis comparativo se activa con al menos 3 propiedades en la zona.
             </p>
           )}
         </Section>
 
+        {property.observedHistory.dropCount > 0 ? (
+          <>
+            <Separator />
+            <Section title="Histórico observado por Lince">
+              <div className="grid grid-cols-3 gap-x-8 gap-y-3 text-sm">
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground text-xs">Días observado</span>
+                  <span
+                    className="font-medium tabular-nums"
+                    title="Días desde que Lince vio la propiedad por primera vez (no días en mercado real)"
+                  >
+                    {property.observedHistory.daysObservedByLince}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground text-xs">Rebajas detectadas</span>
+                  <span className="font-medium tabular-nums">
+                    {property.observedHistory.dropCount} (−
+                    {Math.round(Math.abs(property.observedHistory.dropTotalPct))}%)
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-muted-foreground text-xs">Última rebaja</span>
+                  <span className="font-medium tabular-nums">
+                    {property.observedHistory.daysSinceLastDrop !== null
+                      ? `hace ${property.observedHistory.daysSinceLastDrop}d`
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+              <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
+                Estos contadores reflejan SOLO lo que Lince ha visto desde la primera vez que
+                crawleó la propiedad. NO es el histórico real del portal — podría haber bajado
+                precio antes de que la viéramos.
+              </p>
+            </Section>
+          </>
+        ) : null}
+
         <Separator />
 
-        <Section title="Análisis financiero">
+        <Section title="Score, etiquetas y caveats">
+          <OpportunityFactsPanel property={property} />
+        </Section>
+
+        <Separator />
+
+        <Section title="Análisis flip (comprar → reformar → vender)">
+          <FlipAnalysisSection property={property} />
+        </Section>
+
+        <Separator />
+
+        <Section title="Análisis visual (Claude Vision)">
+          <VisualAnalysisSection property={property} />
+        </Section>
+
+        <Separator />
+
+        <Section title="Análisis financiero patrimonial">
           <FinancialAnalysisSection property={property} />
         </Section>
 
@@ -337,6 +408,12 @@ function Body({
       </div>
     </>
   );
+}
+
+function bucketLabel(p: Property): string {
+  if (p.isAuction) return 'subasta';
+  if (p.isBankOwned) return 'bank-owned';
+  return 'portal';
 }
 
 function FeatureList({ property }: { property: Property }) {

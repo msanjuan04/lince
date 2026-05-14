@@ -60,6 +60,96 @@ export interface PriceHistoryEntry {
   deltaPct: number | null;
 }
 
+export type TagTone = 'positive' | 'negative' | 'neutral' | 'info';
+
+export interface FactTag {
+  id: string;
+  label: string;
+  tone: TagTone;
+  /** Origen literal del dato — visible en tooltip para auditoría. */
+  source: string;
+}
+
+/** Tier de zona según el informe de mercado. D = momentum negativo. */
+export type ZoneTier = 'A' | 'B' | 'C' | 'D';
+export type ZoneMomentum = 'high' | 'medium' | 'low' | 'negative';
+
+/** Información de referencia de mercado para el CP de la propiedad. */
+export interface MarketReference {
+  municipality: string;
+  district: string | null;
+  avgEurM2: number;
+  premiumEurM2: number | null;
+  yoyPct: number;
+  tier: ZoneTier;
+  momentum: ZoneMomentum;
+  source: string;
+  notes?: string;
+}
+
+/** Análisis visual de la foto principal por Claude Vision. */
+export interface VisualAnalysisView {
+  id: string;
+  imageUrl: string;
+  conditionScore: number | null;
+  conditionLabel: string | null;
+  reformCostPerM2: number | null;
+  elementsToReform: string[];
+  visualRedFlags: string[];
+  photoQuality: string | null;
+  summary: string | null;
+  modelId: string;
+  costEur: number;
+  createdAt: Date;
+}
+
+/** Mediana de absorción medida por el crawler — proxy de tiempo en mercado. */
+export interface AbsorptionView {
+  /** Mediana de días entre publicación y desaparición del crawler. */
+  medianDays: number;
+  /** Tamaño muestra. Min 3 para que aparezca. */
+  sampleSize: number;
+  /** Bucket usado: subasta / bank-owned / portal. */
+  bucket: 'auction' | 'bank_owned' | 'portal';
+}
+
+/** Estimación flip completa para una propiedad. */
+export interface FlipEstimateView {
+  acquisitionCostTotal: number | null;
+  reformCost: number | null;
+  totalInvestment: number | null;
+  expectedSalePrice: number | null;
+  expectedSaleEurM2: number | null;
+  expectedSaleSource: string | null;
+  netSaleProceeds: number | null;
+  grossMarginEur: number | null;
+  grossMarginPct: number | null;
+  cycleMonths: number | null;
+  annualizedMarginPct: number | null;
+  reasons: string[];
+  breakdown: string[];
+  /** Parámetros usados (€/m² reforma aplicado, etc.) para auditoría. */
+  params: {
+    eurM2Reform: number;
+    monthsToSell: number | null;
+  };
+}
+
+/**
+ * Histórico observado por Lince. Nombre explícito: NO es histórico real del
+ * portal — solo refleja lo que Lince ha visto desde first_seen.
+ */
+export interface ObservedHistory {
+  /** Días desde que Lince vio la propiedad por primera vez. ≠ días en mercado real. */
+  daysObservedByLince: number;
+  /** Rebajas detectadas entre crawls. */
+  dropCount: number;
+  /** Magnitud acumulada (negativo). */
+  dropTotalPct: number;
+  /** Días desde la última rebaja. Null si nunca ha bajado. */
+  daysSinceLastDrop: number | null;
+}
+
 /**
  * Modelo Property tal y como lo consume la UI.
  *
@@ -93,8 +183,60 @@ export interface Property {
   zoneSampleSize: number;
   /** Delta % vs zona — null si zoneAvgPricePerM2 es null. */
   zoneDeltaPct: number | null;
-  /** Score 0..100. Null si no calculable (sin precio o sin muestra de zona). */
+  /**
+   * Score 0..100. Derivado SOLO del descuento vs mediana del bucket del CP.
+   * Null si no hay muestra suficiente. No mezcla heurísticas.
+   */
   opportunityScore: number | null;
+  /**
+   * Descuento numérico real vs mediana del bucket. Ej. -0.51 = 51% bajo
+   * mediana. Es la métrica honesta que da origen al score.
+   */
+  discountVsBucketPct: number | null;
+  /** Mediana €/m² del bucket al que pertenece (subasta/bank/portal). Null si poca muestra. */
+  bucketMedianEurM2: number | null;
+  /** Nº muestras del bucket usado para la mediana. */
+  bucketSampleSize: number;
+  /**
+   * Frase humana con el cálculo literal del score, o por qué no se pudo
+   * calcular. Para mostrar al inversor con auditoría.
+   */
+  scoreReason: string;
+  /** Caveats que el inversor debe conocer (regex falsos positivos, etc). */
+  scoreCaveats: string[];
+  /** Etiquetas factuales — no suman al score, son contexto verificable. */
+  tags: FactTag[];
+  /**
+   * Histórico observado por Lince. Null si la propiedad acaba de entrar y no
+   * tiene aún ni una entrada de historia (caso raro — siempre creamos 1 al
+   * upsertar).
+   */
+  observedHistory: ObservedHistory;
+  /**
+   * Referencia de mercado para el CP de la propiedad — del informe Idealista/
+   * Indomio/Fotocasa abril 2026. Null si el CP no está cubierto por el informe
+   * (lo cual no debería pasar al filtrar por universo, pero por defensa).
+   */
+  marketReference: MarketReference | null;
+  /**
+   * Estimación flip — depende de parámetros variables del usuario (€/m²
+   * reforma típicamente). En el adapter se calcula con defaults; la UI puede
+   * recalcular en cliente con sliders.
+   */
+  flipEstimate: FlipEstimateView | null;
+  /**
+   * Absorción medida por el crawler para el CP+bucket de esta propiedad.
+   * Null si todavía no hay muestra suficiente (mínimo 3). Cuando aparece,
+   * el flip estimate puede calcular `monthsToSell` y por tanto el ciclo +
+   * margen anualizado.
+   */
+  absorption: AbsorptionView | null;
+  /**
+   * Último análisis visual de Claude Vision sobre la foto principal. Solo
+   * cargado en `fetchPropertyById` (no en listados — sería N+1). Null si
+   * todavía no se ha analizado.
+   */
+  visualAnalysis: VisualAnalysisView | null;
   status: 'active' | 'auction' | 'sold' | 'withdrawn' | null;
   isAuction: boolean;
   isBankOwned: boolean;
