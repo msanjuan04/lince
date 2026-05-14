@@ -165,6 +165,10 @@ model Property {
   // Banderas rojas detectadas en descripción (okupación, VPO, cargas, etc.)
   redFlags          String[] @map("red_flags")
 
+  /// URL de la foto principal (og:image, imagenBuscadorPc de Solvia, etc.).
+  /// La usamos para enviar visualmente la oportunidad en el informe Pulse.
+  mainImageUrl      String?  @map("main_image_url")
+
   rawData           Json?    @map("raw_data") @db.JsonB
   firstSeen         DateTime @default(now()) @map("first_seen") @db.Timestamptz()
   lastSeen          DateTime @default(now()) @map("last_seen") @db.Timestamptz()

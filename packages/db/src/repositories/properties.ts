@@ -33,6 +33,7 @@ export type PropertyUpsertInput = {
   isAuction?: boolean | null;
   auctionStartingPrice?: number | null;
   redFlags?: string[];
+  mainImageUrl?: string | null;
   rawData?: Prisma.InputJsonValue | null;
 };
 
@@ -86,6 +87,7 @@ export async function upsertProperty(input: PropertyUpsertInput): Promise<Upsert
     isAuction: input.isAuction ?? null,
     auctionStartingPrice: toDecimal(input.auctionStartingPrice),
     redFlags: input.redFlags ?? [],
+    mainImageUrl: input.mainImageUrl ?? null,
     rawData: input.rawData ?? Prisma.JsonNull,
     lastSeen: now,
   } satisfies Prisma.PropertyUpdateInput;

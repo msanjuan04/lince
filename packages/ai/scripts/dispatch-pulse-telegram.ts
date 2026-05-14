@@ -18,7 +18,13 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { TelegramClient, getTelegramConfigFromEnv, markdownToTelegramHtml } from '@lince/notifier';
-import { generatePulseReport, loadPulseData, type PulseReaderRole } from '../src';
+import {
+  generatePulseReport,
+  loadPulseData,
+  type PulseReaderRole,
+  type PulsePropertyInput,
+  type PulseZoneStats,
+} from '../src';
 
 // Soft env loader (idéntico al de probe-pulse-report.ts).
 function loadEnvSoft(): void {
@@ -170,7 +176,13 @@ async function main(): Promise<void> {
   const uniqueRoles = Array.from(new Set(recipients.map((r) => r.role)));
   console.error(`[dispatch] Roles a generar: ${uniqueRoles.join(', ')}`);
 
-  const reportByRole: Record<string, string> = {};
+  interface RoleReport {
+    markdown: string;
+    properties: PulsePropertyInput[];
+    zoneStats: PulseZoneStats[];
+  }
+
+  const reportByRole: Record<string, RoleReport> = {};
   for (const role of uniqueRoles) {
     console.error(`[dispatch] Generando informe para rol=${role}...`);
     const data = await loadPulseData({
@@ -187,7 +199,11 @@ async function main(): Promise<void> {
     console.error(
       `[dispatch]   OK en ${Date.now() - t0}ms — tokens: in=${result.usage.inputTokens}, out=${result.usage.outputTokens}, cache_read=${result.usage.cacheReadInputTokens}`,
     );
-    reportByRole[role] = result.markdown;
+    reportByRole[role] = {
+      markdown: result.markdown,
+      properties: data.properties,
+      zoneStats: data.zoneStats,
+    };
   }
 
   // Mandar a cada destinatario el informe de su rol.
@@ -198,28 +214,50 @@ async function main(): Promise<void> {
 
   const failures: Array<{ chatId: string; error: string }> = [];
   for (const recipient of recipients) {
-    const markdown = reportByRole[recipient.role];
-    if (!markdown) {
+    const report = reportByRole[recipient.role];
+    if (!report) {
       console.warn(
         `[dispatch] Sin informe para rol=${recipient.role}, salto chat ${recipient.chatId}.`,
       );
       continue;
     }
-    const html = markdownToTelegramHtml(markdown);
-    const result = await telegram.sendMessage({
+    const html = markdownToTelegramHtml(report.markdown);
+    const textResult = await telegram.sendMessage({
       chatId: recipient.chatId,
       text: html,
       parseMode: 'HTML',
+      // Permitimos preview para que cuando Claude inserte un link sólo, salga rich preview.
       disableWebPagePreview: true,
     });
-    if (!result.ok) {
-      failures.push({ chatId: recipient.chatId, error: result.error ?? 'unknown' });
+    if (!textResult.ok) {
+      failures.push({ chatId: recipient.chatId, error: textResult.error ?? 'unknown' });
       console.error(
-        `[dispatch] FAIL chat=${recipient.chatId} role=${recipient.role}: ${result.error}`,
+        `[dispatch] FAIL narrativa chat=${recipient.chatId} role=${recipient.role}: ${textResult.error}`,
+      );
+      continue;
+    }
+    console.error(
+      `[dispatch] OK narrativa chat=${recipient.chatId} role=${recipient.role} (${textResult.chunks} chunk${textResult.chunks > 1 ? 's' : ''})`,
+    );
+
+    // Álbum con las top oportunidades que tengan foto. Caption con link + datos clave.
+    const album = buildPulseAlbum(report.properties, report.zoneStats);
+    if (album.length === 0) {
+      console.error(`[dispatch]   (sin fotos para top, salto álbum chat=${recipient.chatId})`);
+      continue;
+    }
+    const albumResult = await telegram.sendMediaGroup({
+      chatId: recipient.chatId,
+      items: album,
+      disableNotification: true, // El bell del álbum es ruidoso, ya notificamos con el texto.
+    });
+    if (!albumResult.ok) {
+      console.error(
+        `[dispatch] WARN álbum chat=${recipient.chatId}: ${albumResult.error} — narrativa enviada igual`,
       );
     } else {
       console.error(
-        `[dispatch] OK   chat=${recipient.chatId} role=${recipient.role} (${result.chunks} mensaje${result.chunks > 1 ? 's' : ''})`,
+        `[dispatch] OK álbum chat=${recipient.chatId} (${album.length} foto${album.length > 1 ? 's' : ''}, ${albumResult.chunks} batch${albumResult.chunks > 1 ? 'es' : ''})`,
       );
     }
   }
@@ -229,6 +267,103 @@ async function main(): Promise<void> {
     `[dispatch] Resumen: ${recipients.length - failures.length}/${recipients.length} enviados, ${failures.length} fallos.`,
   );
   if (failures.length > 0) process.exit(1);
+}
+
+/**
+ * Construye el álbum visual del informe: hasta 5 propiedades del top con foto,
+ * cada una con caption HTML (negrita + link a la fuente + datos clave).
+ * La 1ª lleva un "intro" del álbum; las demás solo datos de la propiedad.
+ */
+function buildPulseAlbum(
+  properties: PulsePropertyInput[],
+  zoneStats: PulseZoneStats[],
+): Array<{ photoUrl: string; caption?: string; parseMode?: 'HTML' }> {
+  const zoneByCp = new Map(zoneStats.map((z) => [z.postalCode, z]));
+  const withPhoto = properties.filter((p) => !!p.mainImageUrl);
+  const top = withPhoto.slice(0, 5);
+
+  return top.map((p, idx) => {
+    const isFirst = idx === 0;
+    const caption = buildPropertyCaption(p, zoneByCp.get(p.postalCode ?? ''), idx + 1, isFirst);
+    return {
+      photoUrl: p.mainImageUrl as string,
+      caption,
+      parseMode: 'HTML' as const,
+    };
+  });
+}
+
+function buildPropertyCaption(
+  p: PulsePropertyInput,
+  zone: PulseZoneStats | undefined,
+  position: number,
+  isFirst: boolean,
+): string {
+  const lines: string[] = [];
+  if (isFirst) {
+    lines.push('<b>Top oportunidades — visual</b>');
+    lines.push('');
+  }
+
+  const address = escapeHtml(p.address ?? 'Sin dirección');
+  const cpCity = [p.postalCode, p.city].filter(Boolean).join(' ');
+  const header = p.sourceUrl
+    ? `<b>${position}. <a href="${escapeAttr(p.sourceUrl)}">${address}</a></b>`
+    : `<b>${position}. ${address}</b>`;
+  lines.push(header);
+  if (cpCity) lines.push(escapeHtml(cpCity));
+
+  const facts: string[] = [];
+  if (p.type) facts.push(escapeHtml(p.type));
+  if (p.m2) facts.push(`${p.m2}m²`);
+  if (p.rooms) facts.push(`${p.rooms} hab`);
+  if (facts.length > 0) lines.push(facts.join(' · '));
+
+  if (p.price != null) {
+    const priceLine: string[] = [`<b>${formatEur(p.price)}</b>`];
+    if (p.pricePerM2 != null) priceLine.push(`${formatEur(p.pricePerM2)}/m²`);
+    if (zone?.avgPricePerM2 && p.pricePerM2 != null) {
+      const delta = ((p.pricePerM2 - zone.avgPricePerM2) / zone.avgPricePerM2) * 100;
+      const sign = delta < 0 ? '' : '+';
+      priceLine.push(`(${sign}${delta.toFixed(0)}% vs zona ${formatEur(zone.avgPricePerM2)}/m²)`);
+    }
+    lines.push(priceLine.join(' · '));
+  }
+
+  if (p.opportunityScore != null) {
+    lines.push(`Score: <b>${Math.round(p.opportunityScore)}/100</b>`);
+  }
+
+  const tags: string[] = [];
+  if (p.isAuction) tags.push('Subasta');
+  if (p.isBankOwned) tags.push('Bank-owned');
+  if (p.condition === 'needs_reform') tags.push('A reformar');
+  if (p.redFlags && p.redFlags.length > 0) {
+    tags.push(`⚠️ ${p.redFlags.slice(0, 3).join(', ')}`);
+  }
+  if (tags.length > 0) lines.push(tags.join(' · '));
+
+  if (p.sourceUrl) {
+    lines.push('');
+    lines.push(`<a href="${escapeAttr(p.sourceUrl)}">Ver anuncio en ${escapeHtml(p.source)}</a>`);
+  }
+
+  return lines.join('\n');
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function formatEur(n: number): string {
+  // Estilo español: 165.000€, 2.345€/m²
+  const fixed = Math.round(n).toString();
+  const withDots = fixed.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${withDots}€`;
 }
 
 main()

@@ -114,6 +114,10 @@ export interface PulsePropertyInput {
   estimatedMonthlyRent: number | null;
   /** Días desde first_seen — proxy de "tiempo en mercado". */
   daysOnMarket: number;
+  /** URL de la fuente original — la usamos para el link en el envío Telegram. */
+  sourceUrl: string | null;
+  /** URL de la foto principal — la usamos para el álbum en Telegram. */
+  mainImageUrl: string | null;
 }
 
 export interface PulseZoneStats {
@@ -147,7 +151,13 @@ export function buildPulseUserMessage(input: PulseReportInput): string {
     )
     .join('\n');
 
-  const propsJson = JSON.stringify(input.properties, null, 2);
+  // Excluimos metadatos de dispatch (sourceUrl, mainImageUrl) — el agente no
+  // los necesita para razonar y solo añadirían tokens.
+  const propsForPrompt = input.properties.map((p) => {
+    const { sourceUrl: _u, mainImageUrl: _i, ...rest } = p;
+    return rest;
+  });
+  const propsJson = JSON.stringify(propsForPrompt, null, 2);
 
   return `ROL DEL LECTOR: ${input.readerRole} — ${ROLE_LABEL[input.readerRole]}
 

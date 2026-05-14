@@ -116,6 +116,7 @@ function parseDetail(url: string, href: string, html: string): PropertyUpsertInp
     $('meta[name="description"]').attr('content') ??
     '';
   const ogUrl = $('meta[property="og:url"]').attr('content') ?? url;
+  const mainImageUrl = pickPisosMainImage($);
 
   // Pisos.com usa estructuras como h1 para dirección
   const h1 = cleanWhitespace($('h1').first().text());
@@ -191,9 +192,39 @@ function parseDetail(url: string, href: string, html: string): PropertyUpsertInp
     isBankOwned: false,
     isAuction: false,
     redFlags: detectRedFlags(description),
+    mainImageUrl,
     status: 'active',
-    rawData: { ogTitle, ogDescription, features },
+    rawData: { ogTitle, ogDescription, features, mainImageUrl },
   };
+}
+
+/**
+ * Foto principal de la ficha. Pisos.com expone og:image (siempre presente en
+ * fichas estándar). Fallback al primer <img> dentro del carrusel principal.
+ */
+function pickPisosMainImage($: CheerioAPI): string | null {
+  const og = $('meta[property="og:image"]').attr('content');
+  if (og && og.trim()) {
+    const url = og.trim();
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    if (url.startsWith('//')) return `https:${url}`;
+  }
+  // Fallback: primer img del carousel/gallery con URL absoluta
+  let fallback: string | null = null;
+  $('[class*="carousel"] img, [class*="gallery"] img, [class*="slider"] img, picture img').each(
+    (_, el) => {
+      if (fallback) return;
+      const src =
+        $(el).attr('data-src') ??
+        $(el).attr('data-original') ??
+        $(el).attr('src') ??
+        $(el).attr('srcset')?.split(',')[0]?.trim().split(' ')[0];
+      if (!src) return;
+      if (src.startsWith('http')) fallback = src;
+      else if (src.startsWith('//')) fallback = `https:${src}`;
+    },
+  );
+  return fallback;
 }
 
 function extractFeatures($: CheerioAPI): string[] {

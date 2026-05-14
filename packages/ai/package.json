@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "pulse:probe": "tsx scripts/probe-pulse-report.ts",
     "pulse:dispatch": "tsx scripts/dispatch-pulse-telegram.ts",
-    "telegram:list-chats": "tsx scripts/telegram-list-chats.ts"
+    "telegram:list-chats": "tsx scripts/telegram-list-chats.ts",
+    "telegram:test": "tsx scripts/telegram-test.ts",
+    "telegram:album-smoke": "tsx scripts/telegram-album-smoke.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",

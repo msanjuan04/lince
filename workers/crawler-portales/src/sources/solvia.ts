@@ -151,6 +151,12 @@ interface PropertyBasicDetail {
   };
   campanya?: { name?: string };
   enSituacionEspecial?: string;
+  /** URL absoluta de la foto principal en el listado (formato CDN Solvia). */
+  imagenBuscadorPc?: string;
+  /** Algunas variantes del state usan `imagenBuscador` sin sufijo. */
+  imagenBuscador?: string;
+  /** Multimedia con todas las fotos — fallback si las imagen* directas faltan. */
+  multimedia?: Array<{ url?: string; tipo?: string }>;
 }
 
 function parseDetailFromNgState(url: string, html: string): PropertyUpsertInput | null {
@@ -201,6 +207,8 @@ function parseDetailFromNgState(url: string, html: string): PropertyUpsertInput 
     typeof detail.precio === 'number' ? detail.precio : parsePriceEur(String(detail.precio ?? ''));
   const m2 = typeof detail.m2 === 'number' && detail.m2 > 0 ? detail.m2 : null;
 
+  const mainImageUrl = pickSolviaMainImage(detail);
+
   return {
     source: 'solvia',
     sourceId,
@@ -220,6 +228,7 @@ function parseDetailFromNgState(url: string, html: string): PropertyUpsertInput 
     isBankOwned: true,
     isAuction: false,
     redFlags: Array.from(redFlags),
+    mainImageUrl,
     status: 'active',
     rawData: {
       idSolvia: detail.id,
@@ -229,8 +238,35 @@ function parseDetailFromNgState(url: string, html: string): PropertyUpsertInput 
       importeGastosComunidad: characteristics.importeGastosComunidad ?? null,
       campanya: detail.campanya?.name ?? null,
       tipoVivienda,
+      imagenBuscadorPc: detail.imagenBuscadorPc ?? null,
     },
   };
+}
+
+/**
+ * Selecciona la URL absoluta de la foto principal. Solvia expone `imagenBuscadorPc`
+ * en el listado y a veces `multimedia[]` con todas las fotos. Si la URL viene
+ * relativa, anteponemos el host de Solvia.
+ */
+function pickSolviaMainImage(detail: PropertyBasicDetail): string | null {
+  const candidates = [
+    detail.imagenBuscadorPc,
+    detail.imagenBuscador,
+    ...(Array.isArray(detail.multimedia)
+      ? detail.multimedia
+          .filter((m) => !m.tipo || /foto|imagen|image/i.test(m.tipo))
+          .map((m) => m.url)
+      : []),
+  ];
+  for (const raw of candidates) {
+    if (!raw || typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+    if (trimmed.startsWith('//')) return `https:${trimmed}`;
+    if (trimmed.startsWith('/')) return `https://www.solvia.es${trimmed}`;
+  }
+  return null;
 }
 
 function mapTipoVivienda(tipoVivienda: string, tituloFicha: string | undefined): string | null {

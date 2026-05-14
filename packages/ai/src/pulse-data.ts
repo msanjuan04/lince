@@ -77,6 +77,8 @@ export async function loadPulseData(opts: LoadPulseDataOptions): Promise<PulseRe
       redFlags: p.redFlags ?? [],
       estimatedMonthlyRent,
       daysOnMarket,
+      sourceUrl: p.sourceUrl ?? null,
+      mainImageUrl: p.mainImageUrl ?? null,
     };
   });
 
