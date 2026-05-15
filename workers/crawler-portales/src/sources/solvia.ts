@@ -151,6 +151,10 @@ interface PropertyBasicDetail {
   };
   campanya?: { name?: string };
   enSituacionEspecial?: string;
+  /** Fecha primera publicación en formato "DD/MM/YYYY HH:mm:ss" (Solvia local). */
+  fichaFechaPrimeraPub?: string;
+  /** Última actualización del producto, mismo formato. */
+  fichaFechaActualizacionProducto?: string;
   /** URL absoluta de la foto principal en el listado (formato CDN Solvia). */
   imagenBuscadorPc?: string;
   /** Algunas variantes del state usan `imagenBuscador` sin sufijo. */
@@ -239,6 +243,10 @@ function parseDetailFromNgState(url: string, html: string): PropertyUpsertInput 
       campanya: detail.campanya?.name ?? null,
       tipoVivienda,
       imagenBuscadorPc: detail.imagenBuscadorPc ?? null,
+      // Fecha primera publicación en Solvia (formato "DD/MM/YYYY HH:mm:ss").
+      // evaluate-zones la convierte a ISO para el cálculo de días en mercado.
+      FechaPublicacion: parseSolviaSpanishDateToIso(detail.fichaFechaPrimeraPub),
+      fichaFechaActualizacionProducto: detail.fichaFechaActualizacionProducto ?? null,
     },
   };
 }
@@ -301,6 +309,19 @@ function mapEstadoToCondition(
   if (e.includes('reformado')) return 'recently_reformed';
   if (e.includes('buen estado') || e.includes('seminuevo')) return 'good';
   return 'unknown';
+}
+
+/**
+ * Convierte "DD/MM/YYYY HH:mm:ss" (formato Solvia) a ISO "YYYY-MM-DDTHH:mm:ss".
+ * Devuelve null si la entrada no es válida.
+ */
+function parseSolviaSpanishDateToIso(raw: string | undefined | null): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?$/);
+  if (!m) return null;
+  const [, dd, mm, yyyy, hh, mi, ss] = m;
+  const t = hh && mi && ss ? `${hh}:${mi}:${ss}` : '00:00:00';
+  return `${yyyy}-${mm}-${dd}T${t}`;
 }
 
 function matchesPostalFilter(

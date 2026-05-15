@@ -24,7 +24,7 @@ const DEFAULT_CRON_DAILY = '0 4 * * *'; // todos los días 04:00
 const DEFAULT_CRON_PULSE = '0 8 * * 1'; // lunes 08:00
 const DEFAULT_TZ = 'Europe/Madrid';
 const DEFAULT_MAX = 50;
-const DEFAULT_SOURCES = 'pisos,boe,solvia';
+const DEFAULT_SOURCES = 'pisos,boe,solvia,servihabitat,aliseda';
 
 function parseSources(raw: string | undefined): string[] {
   if (!raw) return DEFAULT_SOURCES.split(',');

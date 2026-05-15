@@ -10,8 +10,10 @@
 // y errores. El job aquí solo orquesta y loggea el resumen.
 
 import {
+  AlisedaSource,
   BoeSource,
   PisosSource,
+  ServihabitatSource,
   SolviaSource,
   runSource,
   type CrawlerSource,
@@ -64,12 +66,14 @@ const SOURCE_REGISTRY: Record<string, () => CrawlerSource> = {
   pisos: () => new PisosSource(),
   boe: () => new BoeSource(),
   solvia: () => new SolviaSource(),
+  servihabitat: () => new ServihabitatSource(),
+  aliseda: () => new AlisedaSource(),
 };
 
 export async function runWeeklySnapshot(
   opts: WeeklySnapshotOptions = {},
 ): Promise<WeeklySnapshotResult> {
-  const sources = opts.sources ?? ['pisos', 'boe', 'solvia'];
+  const sources = opts.sources ?? ['pisos', 'boe', 'solvia', 'servihabitat', 'aliseda'];
   const maxPerSource = opts.maxPerSource ?? 50;
   const startedAt = new Date();
   const runs: OrchestratorResult[] = [];

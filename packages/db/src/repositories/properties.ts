@@ -51,6 +51,30 @@ function toDecimal(value: number | null | undefined): Prisma.Decimal | null {
   return new Prisma.Decimal(value);
 }
 
+/**
+ * Algunas fuentes (Aliseda, Solvia) exponen el precio anterior cuando la
+ * propiedad ha sido rebajada. Si tenemos ese campo y es mayor que el precio
+ * actual, sabemos que hubo una rebaja antes de que Lince viera la propiedad —
+ * la registramos como fila inicial en `price_history` para que el agregador
+ * reporte `dropCount=1`.
+ */
+function extractSourceReportedPreviousPrice(
+  rawData: Prisma.InputJsonValue | null | undefined,
+): number | null {
+  if (!rawData || typeof rawData !== 'object') return null;
+  const obj = rawData as Record<string, unknown>;
+  // Aliseda: PrecioAnterior (camelCase desde nuestro adapter al sub-objeto operacion).
+  if (typeof obj.PrecioAnterior === 'number' && obj.PrecioAnterior > 0) {
+    return obj.PrecioAnterior;
+  }
+  // Solvia: precioAntes (numérico directo). Si es 0 lo descartamos — Solvia
+  // usa 0 como "no aplica".
+  if (typeof obj.precioAntes === 'number' && obj.precioAntes > 0) {
+    return obj.precioAntes;
+  }
+  return null;
+}
+
 /** Upsert por (source, sourceId). Devuelve diff útil para el histórico (Fase 2). */
 export async function upsertProperty(input: PropertyUpsertInput): Promise<UpsertResult> {
   const now = new Date();
@@ -101,17 +125,36 @@ export async function upsertProperty(input: PropertyUpsertInput): Promise<Upsert
         firstSeen: now,
       },
     });
-    // Primera observación de precio: punto cero del histórico.
+    // Punto cero del histórico + posible rebaja reportada por la fuente
+    // (Aliseda: PrecioAnterior · Solvia: precioAntes). Esto distingue entre
+    // "Lince observó cambio entre 2 runs" y "la fuente ya tenía rebaja antes
+    // de que Lince la viera". Ambas filas con observedAt=now por consistencia,
+    // el caller distingue tipo de rebaja por `oldPrice IS NOT NULL` y la
+    // proximidad a `firstSeen` del Property.
     if (input.price !== undefined && input.price !== null) {
-      await prisma.priceHistory.create({
-        data: {
-          propertyId: created.id,
-          oldPrice: null,
-          newPrice: toDecimal(input.price)!,
-          deltaPct: null,
-          observedAt: now,
-        },
-      });
+      const sourceReportedPrevPrice = extractSourceReportedPreviousPrice(input.rawData);
+      if (sourceReportedPrevPrice !== null && sourceReportedPrevPrice > input.price) {
+        const deltaPct = (input.price - sourceReportedPrevPrice) / sourceReportedPrevPrice;
+        await prisma.priceHistory.create({
+          data: {
+            propertyId: created.id,
+            oldPrice: toDecimal(sourceReportedPrevPrice),
+            newPrice: toDecimal(input.price)!,
+            deltaPct: toDecimal(Math.round(deltaPct * 10000) / 100),
+            observedAt: now,
+          },
+        });
+      } else {
+        await prisma.priceHistory.create({
+          data: {
+            propertyId: created.id,
+            oldPrice: null,
+            newPrice: toDecimal(input.price)!,
+            deltaPct: null,
+            observedAt: now,
+          },
+        });
+      }
     }
     return {
       id: created.id,

@@ -39,7 +39,7 @@ export async function runDetectDisappeared(): Promise<DetectDisappearedResult> {
   try {
     // Sources de crawler que mantienen inventario (excluimos pulse-dispatch,
     // catastro-enrich, evaluate-zones, detect-disappeared).
-    const crawlerSources = ['pisos', 'boe', 'solvia'];
+    const crawlerSources = ['pisos', 'boe', 'solvia', 'servihabitat', 'aliseda'];
 
     for (const source of crawlerSources) {
       const lastOk = await prisma.crawlerRun.findFirst({

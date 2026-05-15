@@ -9,7 +9,14 @@
 // destinatario, intenta enviar. Si las credenciales no están, queda en
 // modo dry y la fila se marca 'pending' para reintentar después.
 
-import { prisma, zonesRepo, zoneAlertsRepo, type ZoneAlertTrigger } from '@lince/db';
+import {
+  prisma,
+  zonesRepo,
+  zoneAlertsRepo,
+  priceHistorySummaryRepo,
+  estimateSalePricePerM2FromReference,
+  type ZoneAlertTrigger,
+} from '@lince/db';
 import {
   TelegramClient,
   WhatsAppClient,
@@ -20,6 +27,7 @@ import {
   type AlertContext,
   type AlertTrigger,
 } from '@lince/notifier';
+import { computeFlipEstimate } from '@lince/ai';
 
 export interface EvaluateZonesOptions {
   /** Mira propiedades vistas por primera vez en las últimas N horas. Default 168 (7 días). */
@@ -65,6 +73,11 @@ export async function runEvaluateZones(
   const tg = new TelegramClient(getTelegramConfigFromEnv());
   const tgChatIds = parseTelegramChatIds(process.env['TELEGRAM_CHAT_IDS']);
 
+  // Pre-cargar resumen de rebajas observadas por Lince — una sola query
+  // agregada en lugar de N queries de price_history en el loop. Map por
+  // propertyId con dropCount/dropTotalPct/daysSinceLastDrop.
+  const priceHistorySummaries = await priceHistorySummaryRepo.getPriceHistorySummaryMap();
+
   let alertsCreated = 0;
   let alertsSent = 0;
   let alertsSkipped = 0;
@@ -88,6 +101,37 @@ export async function runEvaluateZones(
       // Decide canal: telegram preferido para uso interno, whatsapp legacy.
       const useTelegram = zone.alertChannels.includes('telegram');
       const useWhatsApp = !useTelegram && zone.alertChannels.includes('whatsapp');
+
+      // Modo dry-run: no tocamos DB en absoluto. Hacemos el cómputo del margen
+      // en memoria para reportar "would send / would skip" pero sin crear filas.
+      if (opts.dryRun) {
+        const property = await prisma.property.findUnique({
+          where: { id: task.propertyId },
+          select: { price: true, m2: true, postalCode: true },
+        });
+        if (!property) continue;
+        const expectedSale = estimateSalePricePerM2FromReference(property.postalCode, {
+          useMaxPremium: true,
+          safetyMarginPct: 0.1,
+        });
+        const fe = computeFlipEstimate({
+          listPrice: property.price ? Number(property.price) : null,
+          m2: property.m2,
+          eurM2Reform: 400,
+          expectedSaleEurM2: expectedSale?.eurM2 ?? null,
+          expectedSaleSource: expectedSale?.source ?? null,
+          monthsToSell: 6,
+          saleCommissionPct: 0.03,
+        });
+        const MIN = Number(process.env['FLIP_MIN_MARGIN_PCT'] ?? '0.25');
+        if (fe.grossMarginPct !== null && fe.grossMarginPct < MIN) {
+          alertsSkipped += 1;
+        } else {
+          alertsSent += 1;
+        }
+        alertsCreated += 1;
+        continue;
+      }
 
       // Crear la fila (dedup automático por unique constraint)
       const alert = await zoneAlertsRepo.upsertZoneAlert({
@@ -139,7 +183,108 @@ export async function runEvaluateZones(
         pisos: 'Pisos.com',
         boe: 'BOE Subastas',
         solvia: 'Solvia',
+        servihabitat: 'Servihabitat (CaixaBank)',
+        aliseda: 'Aliseda (Santander/SAREB)',
       };
+
+      // Extraer descuento de rawData según la fuente (cada servicer guarda
+      // sus campos con nombres distintos en rawData; aquí los unificamos).
+      const raw = (property.rawData ?? {}) as Record<string, unknown>;
+      const previousPrice =
+        typeof raw.PrecioAnterior === 'number'
+          ? raw.PrecioAnterior
+          : typeof raw.precioAntes === 'number'
+            ? raw.precioAntes
+            : null;
+      const discountPct =
+        typeof raw.DescuentoPrecio === 'number' && raw.DescuentoPrecio > 0
+          ? raw.DescuentoPrecio
+          : null;
+
+      // Margen flip estimado: reusa flip-estimator con baremos del contacto
+      // (€/m² reforma a coste material). Si falta dato crítico (m² o referencia
+      // de mercado), el helper devuelve null y la alerta lo omite — no inventa.
+      const priceNum = property.price ? Number(property.price) : null;
+      const expectedSale = estimateSalePricePerM2FromReference(property.postalCode, {
+        useMaxPremium: true,
+        safetyMarginPct: 0.1,
+      });
+      const flipEstimate = computeFlipEstimate({
+        listPrice: priceNum,
+        m2: property.m2,
+        eurM2Reform: 400, // contacto reforma a coste material (no 700€/m² medio mercado)
+        expectedSaleEurM2: expectedSale?.eurM2 ?? null,
+        expectedSaleSource: expectedSale?.source ?? null,
+        monthsToSell: 6,
+        saleCommissionPct: 0.03,
+      });
+
+      // GATE de margen: si tenemos estimación calculable y NO llega al umbral
+      // mínimo, saltamos la alerta. Si no se puede calcular (faltan datos),
+      // dejamos pasar — el usuario decide con los datos que sí hay. Política
+      // explícita: mejor "no sé, te lo enseño" que "ruido por defecto".
+      const MIN_FLIP_MARGIN_PCT = Number(process.env['FLIP_MIN_MARGIN_PCT'] ?? '0.25');
+      if (
+        flipEstimate.grossMarginPct !== null &&
+        flipEstimate.grossMarginPct < MIN_FLIP_MARGIN_PCT
+      ) {
+        const pctStr = (flipEstimate.grossMarginPct * 100).toFixed(0);
+        const thrStr = (MIN_FLIP_MARGIN_PCT * 100).toFixed(0);
+        await zoneAlertsRepo.markAlertSkipped(
+          alert.id,
+          `margen flip estimado ${pctStr}% < umbral ${thrStr}%`,
+        );
+        alertsSkipped += 1;
+        continue;
+      }
+
+      // Antigüedad: si la fuente expone fecha publicación (Aliseda: rawData
+      // .operacion.FechaPublicacion, Solvia: rawData.operacion?), úsala. Si no,
+      // proxy con firstSeen de Lince — etiqueta correctamente "Visto" vs "Publicado".
+      const publicationDateRaw =
+        (raw as Record<string, unknown>).FechaPublicacion ??
+        ((raw as Record<string, unknown>).operacion as Record<string, unknown> | undefined)?.[
+          'FechaPublicacion'
+        ];
+      let daysOnMarket: number | null = null;
+      let daysOnMarketSource: 'source' | 'lince' | null = null;
+      if (typeof publicationDateRaw === 'string' && publicationDateRaw.length >= 10) {
+        const pubDate = new Date(publicationDateRaw);
+        if (!isNaN(pubDate.getTime())) {
+          daysOnMarket = Math.max(0, Math.floor((Date.now() - pubDate.getTime()) / 86_400_000));
+          daysOnMarketSource = 'source';
+        }
+      }
+      if (daysOnMarket === null && property.firstSeen) {
+        daysOnMarket = Math.max(
+          0,
+          Math.floor((Date.now() - property.firstSeen.getTime()) / 86_400_000),
+        );
+        daysOnMarketSource = 'lince';
+      }
+
+      // Rebajas observadas — del map agregado pre-cargado.
+      // Detectamos "fromSource" cuando la única (o más reciente) rebaja se
+      // observó ≈ el mismo día que firstSeen → es la registrada-al-alta por
+      // la fuente, no una observación de Lince entre runs.
+      const historySum = priceHistorySummaries.get(property.id);
+      let priceDrops: AlertContext['priceDrops'] = null;
+      if (historySum && historySum.dropCount > 0) {
+        const daysSinceFirstSeen = property.firstSeen
+          ? Math.floor((Date.now() - property.firstSeen.getTime()) / 86_400_000)
+          : null;
+        const fromSource =
+          historySum.dropCount === 1 &&
+          daysSinceFirstSeen !== null &&
+          historySum.daysSinceLastDrop !== null &&
+          Math.abs(historySum.daysSinceLastDrop - daysSinceFirstSeen) <= 1;
+        priceDrops = {
+          count: historySum.dropCount,
+          totalPct: historySum.dropTotalPct,
+          daysSinceLast: historySum.daysSinceLastDrop,
+          fromSource,
+        };
+      }
 
       const ctx: AlertContext = {
         zoneName: zone.name ?? 'tu zona',
@@ -147,46 +292,55 @@ export async function runEvaluateZones(
           address: property.address,
           city: property.city,
           postalCode: property.postalCode,
-          price: property.price ? Number(property.price) : null,
+          price: priceNum,
           pricePerM2: property.pricePerM2 ? Number(property.pricePerM2) : null,
           zoneAvgPricePerM2: property.zoneAvgPricePerM2 ? Number(property.zoneAvgPricePerM2) : null,
           m2: property.m2,
           rooms: property.rooms,
           sourceLabel: sourceLabelMap[property.source] ?? property.source,
           sourceUrl: property.sourceUrl,
+          mainImageUrl: property.mainImageUrl,
+          previousPrice,
+          discountPct,
         },
+        flipMarginPct: flipEstimate.grossMarginPct,
+        flipMarginEur: flipEstimate.grossMarginEur,
+        daysOnMarket,
+        daysOnMarketSource,
+        priceDrops,
       };
-
-      if (opts.dryRun) {
-        const channel = useTelegram
-          ? `telegram (${tgChatIds.length} chats)`
-          : `whatsapp ${zone.alertPhoneE164}`;
-        console.log(`[evaluate-zones DRY] would send to ${channel} for property ${property.id}`);
-        alertsSent += 1;
-        continue;
-      }
 
       if (useTelegram) {
         const html = renderTelegramAlert(task.trigger, ctx);
-        let ok = true;
-        let firstError: string | undefined;
+        const photoUrl = ctx.property.mainImageUrl;
+
+        // Contamos éxito como "al menos UN chat recibió". Antes contaba como
+        // failed si UNO fallaba aunque otros recibieran — bug que ensuciaba el
+        // reporte y bloqueaba contadores de sent.
+        let anyDelivered = false;
+        let lastError: string | undefined;
         for (const chatId of tgChatIds) {
-          const r = await tg.sendMessage({
-            chatId,
-            text: html,
-            parseMode: 'HTML',
-            disableWebPagePreview: false,
-          });
-          if (!r.ok) {
-            ok = false;
-            firstError ??= r.error;
-          }
+          const r = photoUrl
+            ? await tg.sendPhoto({
+                chatId,
+                photoUrl,
+                caption: html,
+                parseMode: 'HTML',
+              })
+            : await tg.sendMessage({
+                chatId,
+                text: html,
+                parseMode: 'HTML',
+                disableWebPagePreview: false,
+              });
+          if (r.ok) anyDelivered = true;
+          else lastError = r.error;
         }
-        if (ok) {
+        if (anyDelivered) {
           await zoneAlertsRepo.markAlertSent(alert.id);
           alertsSent += 1;
         } else {
-          await zoneAlertsRepo.markAlertFailed(alert.id, firstError ?? 'unknown');
+          await zoneAlertsRepo.markAlertFailed(alert.id, lastError ?? 'unknown');
           alertsFailed += 1;
         }
       } else {

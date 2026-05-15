@@ -1,11 +1,13 @@
 // CLI del crawler. Uso:
-//   pnpm crawl --source <solvia|boe|pisos> [--postal 08003,08010] [--max 50]
+//   pnpm crawl --source <solvia|boe|pisos|servihabitat> [--postal 08003,08010] [--max 50]
 //
 // Por defecto: max 50 ítems por fuente (smoke). Filtro de CP opcional.
 
 import { SolviaSource } from './sources/solvia';
 import { BoeSource } from './sources/boe';
 import { PisosSource } from './sources/pisos';
+import { ServihabitatSource } from './sources/servihabitat';
+import { AlisedaSource } from './sources/aliseda';
 import { runSource } from './orchestrator';
 import type { CrawlerSource } from './sources/types';
 
@@ -45,6 +47,8 @@ const SOURCES: Record<string, () => CrawlerSource> = {
   solvia: () => new SolviaSource(),
   boe: () => new BoeSource(),
   pisos: () => new PisosSource(),
+  servihabitat: () => new ServihabitatSource(),
+  aliseda: () => new AlisedaSource(),
 };
 
 async function main(): Promise<void> {
