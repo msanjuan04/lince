@@ -1,18 +1,31 @@
 // CLI one-shot: ejecuta el weekly-snapshot inmediatamente y sale.
-// Útil en desarrollo y para tests manuales.
+// Útil en desarrollo, tests manuales y para el cron rápido cada 30 min.
 //
 // Uso:
 //   pnpm --filter @lince/scheduler trigger-now
 //   pnpm --filter @lince/scheduler trigger-now -- --sources solvia --max 10
+//   pnpm --filter @lince/scheduler trigger-now -- --sources aliseda,pisos --max 50 \
+//        --no-catastro --no-vision --no-disappeared
+//
+// Los flags --no-* se usan en el cron de cada 30 min para saltar pasos
+// pesados (Catastro / Vision / detect-disappeared) y dejar solo crawl + score
+// + evaluate-zones (los que disparan Telegram).
 
 import { runWeeklySnapshot } from './jobs/weekly-snapshot';
 
-function parseArgs(argv: string[]): {
+interface ParsedArgs {
   sources?: string[];
   maxPerSource?: number;
   postalCodes?: string[];
-} {
-  const out: { sources?: string[]; maxPerSource?: number; postalCodes?: string[] } = {};
+  enrichCatastro?: boolean;
+  analyzePhotos?: boolean;
+  detectDisappeared?: boolean;
+  evaluateZones?: boolean;
+  scoreProperties?: boolean;
+}
+
+function parseArgs(argv: string[]): ParsedArgs {
+  const out: ParsedArgs = {};
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (!a) continue;
@@ -36,6 +49,17 @@ function parseArgs(argv: string[]): {
           .map((s) => s.trim())
           .filter(Boolean);
       if (eqIdx < 0) i += 1;
+    } else if (key === '--no-catastro') {
+      out.enrichCatastro = false;
+    } else if (key === '--no-vision' || key === '--no-photos') {
+      out.analyzePhotos = false;
+    } else if (key === '--no-disappeared') {
+      out.detectDisappeared = false;
+    } else if (key === '--no-zones') {
+      // útil para correr el snapshot SIN disparar telegram (ej. backfill)
+      out.evaluateZones = false;
+    } else if (key === '--no-score') {
+      out.scoreProperties = false;
     }
   }
   return out;

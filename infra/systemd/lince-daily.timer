@@ -1,0 +1,10 @@
+[Unit]
+Description=Lince daily snapshot timer (04:00 Europe/Madrid)
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Europe/Madrid
+Persistent=true
+Unit=lince-daily.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Lince frequent timer — dispara cada 30 min (08:00–23:30 horario Europe/Madrid)
+
+[Timer]
+# Cada 30 min en las horas activas (08:00, 08:30, ..., 23:30).
+# De noche descansamos (entre 00:00 y 07:30) — el daily heavy de 04:00 cubre
+# ese tramo. Así evitamos solapar con `lince-daily.timer` (04:00) y reducimos
+# carga sobre las APIs y el droplet en horas muertas.
+OnCalendar=*-*-* 08..23:00,30:00 Europe/Madrid
+Persistent=true
+Unit=lince-frequent.service
+# Si la corrida anterior aún no acabó, la nueva no arranca. systemd serializa
+# automáticamente por defecto con `Type=oneshot`.
+
+[Install]
+WantedBy=timers.target

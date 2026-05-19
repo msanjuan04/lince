@@ -1,0 +1,14 @@
+[Unit]
+Description=Lince frequent crawl (Aliseda + Pisos cada 30 min, light)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lince
+EnvironmentFile=/opt/lince/.env
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+ExecStart=/usr/bin/pnpm --filter @lince/scheduler trigger-now -- --sources aliseda,pisos --max 50 --no-catastro --no-vision --no-disappeared
+StandardOutput=append:/var/log/lince-frequent.log
+StandardError=append:/var/log/lince-frequent.log
+# Cap defensivo: si tarda >20 min, mata. El run light debería ser ~8 min.
+TimeoutStartSec=1200

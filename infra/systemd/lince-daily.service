@@ -1,0 +1,13 @@
+[Unit]
+Description=Lince daily snapshot (crawlers + score + telegram alerts)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lince
+EnvironmentFile=/opt/lince/.env
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+ExecStart=/usr/bin/pnpm --filter @lince/scheduler trigger-now -- --max 200
+StandardOutput=append:/var/log/lince-daily.log
+StandardError=append:/var/log/lince-daily.log
+TimeoutStartSec=3600
