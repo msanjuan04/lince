@@ -120,6 +120,7 @@ async function main(): Promise<void> {
       mainImageUrl: property.mainImageUrl,
       previousPrice,
       discountPct,
+      cadastralRef: property.cadastralRef,
     },
     flipMarginPct: fe.grossMarginPct,
     flipMarginEur: fe.grossMarginEur,

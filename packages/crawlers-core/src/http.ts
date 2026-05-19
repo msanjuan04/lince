@@ -46,8 +46,12 @@ export async function fetchWithRetry(url: string, opts: FetchOptions = {}): Prom
     let attempt = 0;
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      // Usamos `AbortSignal.timeout()` (Node 22+ nativo) en vez del patrón
+      // setTimeout + AbortController manual. Más fiable contra TCP slow-loris
+      // (server que hace handshake pero no envía body): el timeout efectivo
+      // SÍ aborta el await fetch, donde antes podía quedarse colgado y
+      // bloquear el run del crawler durante horas. Lo descubrí 2026-05-19
+      // tras encontrar un proceso de Pisos.com colgado 11h.
       try {
         const res = await fetch(url, {
           method: 'GET',
@@ -57,7 +61,7 @@ export async function fetchWithRetry(url: string, opts: FetchOptions = {}): Prom
             'Accept-Language': 'es-ES,es;q=0.9,en;q=0.7',
             ...headers,
           },
-          signal: controller.signal,
+          signal: AbortSignal.timeout(timeoutMs),
         });
         if (res.status === 429 || res.status === 503) {
           if (attempt < maxRetries) {
@@ -72,8 +76,10 @@ export async function fetchWithRetry(url: string, opts: FetchOptions = {}): Prom
           throw new HttpError(res.status, url, body.slice(0, 500));
         }
         return res;
-      } finally {
-        clearTimeout(timer);
+      } catch (err) {
+        // AbortError (timeout) + 429/503 que ya agotaron retries: re-lanzar
+        // para que el caller decida (los crawlers ya catchean y siguen).
+        throw err;
       }
     }
   };

@@ -8,12 +8,21 @@
 import { crawlerRunsRepo, propertiesRepo, getAllUniversePostalCodes } from '@lince/db';
 import type { CrawlOptions, CrawlerSource, CrawlErrorRecord, Logger } from './sources/types';
 
-/** Set de CPs que Lince acepta. Se inicializa una vez al cargar el módulo. */
+/** Set de CPs explícitos del informe Q2 2026 (AMB + Maresme + Vallès). */
 const UNIVERSE_POSTAL_CODES = new Set(getAllUniversePostalCodes());
 
+/**
+ * Acepta propiedad si su CP está en el informe Q2 2026 O si pertenece a las 4
+ * provincias de Catalunya (Barcelona 08xxx, Girona 17xxx, Lleida 25xxx,
+ * Tarragona 43xxx). El segundo criterio permite cubrir Costa Brava, Costa
+ * Daurada y otras zonas catalanas sin tener que mantener el dataset informe
+ * completo. El valuator decidirá si la propiedad tiene mediana suficiente
+ * para score.
+ */
 function isInUniverse(postalCode: string | null | undefined): boolean {
   if (!postalCode) return false;
-  return UNIVERSE_POSTAL_CODES.has(postalCode);
+  if (UNIVERSE_POSTAL_CODES.has(postalCode)) return true;
+  return /^(08|17|25|43)\d{3}$/.test(postalCode);
 }
 
 export type OrchestratorResult = {

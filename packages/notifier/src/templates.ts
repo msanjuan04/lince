@@ -23,6 +23,8 @@ export interface AlertContext {
     previousPrice?: number | null;
     /** Porcentaje de descuento aplicado por la fuente (Aliseda: DescuentoPrecio). */
     discountPct?: number | null;
+    /** Referencia catastral (20 chars) — útil para verificación legal y consulta Sede Catastro. */
+    cadastralRef?: string | null;
   };
   /** Solo para price_drop: el delta % observado. */
   priceDropPct?: number;
@@ -222,6 +224,14 @@ export function renderTelegramAlert(trigger: AlertTrigger, ctx: AlertContext): s
 
   if (trigger === 'high_score' && ctx.score != null) {
     lines.push(`Score: <b>${ctx.score}/100</b>`);
+  }
+
+  // Referencia catastral — si está, link a la Sede Electrónica del Catastro
+  // para verificación legal (m², año construcción, uso, titularidad pública).
+  if (p.cadastralRef) {
+    const ref = escapeHtml(p.cadastralRef);
+    const sedeUrl = `https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCConCiud.aspx?RefC=${encodeURIComponent(p.cadastralRef)}`;
+    lines.push(`🏛️ <a href="${escapeAttr(sedeUrl)}">Ref. catastral: <code>${ref}</code></a>`);
   }
 
   lines.push('');

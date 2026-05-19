@@ -35,16 +35,44 @@ const MAX_PAGES_PER_CITY = 6;
 /**
  * Slugs verificados (HTTP 200 con UA LinceBot/1.0, mayo 2026). Si añades una
  * ciudad nueva, antes prueba que `https://www.pisos.com/venta/pisos-<slug>/`
- * devuelva 200 — la convención no siempre es obvia (ej. L'Hospitalet va sin
- * la "l_" inicial: `hospitalet_de_llobregat`).
+ * devuelva 200 — la convención no siempre es obvia:
+ *   - L'Hospitalet va sin la "l_": `hospitalet_de_llobregat`
+ *   - L'Escala va sin la "l_": `escala`
+ *   - Platja d'Aro usa guion-medio (no underscore) y sin apóstrofe: `platja-daro`
+ *   - Empuriabrava se busca directo, NO `castello_d_empuries`
  */
 const PISOS_CITY_SLUGS = [
+  // AMB y entorno BCN
   'barcelona_capital',
   'sant_cugat_del_valles',
   'badalona',
   'hospitalet_de_llobregat',
   'vilassar_de_mar',
   'sabadell',
+  // Costa Brava sur (premium)
+  'palafrugell',
+  'begur',
+  'pals',
+  'sant_feliu_de_guixols',
+  'platja-daro',
+  'calonge',
+  // Costa Brava norte
+  'roses',
+  'cadaques',
+  'escala',
+  'empuriabrava',
+  // Costa Brava sur-baja (Lloret/Tossa/Blanes — turismo masivo, prices accesibles)
+  'tossa_de_mar',
+  'lloret_de_mar',
+  'blanes',
+  // Costa Daurada
+  'salou',
+  'cambrils',
+  'tarragona_capital',
+  'vila_seca',
+  'calafell',
+  'el_vendrell',
+  'mont_roig_del_camp',
 ] as const;
 
 export class PisosSource implements CrawlerSource {

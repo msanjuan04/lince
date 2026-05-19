@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.lince.scheduler-daily</string>
+
+  <!-- Programa a ejecutar — wrapper bash que carga env y dispara trigger-now -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/marccortadaroca/lince/lince/infra/launchd/run-scheduler-daily.sh</string>
+  </array>
+
+  <!-- Cron: cada día a las 04:00 (zona horaria local del sistema) -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>4</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- Si el Mac estaba apagado/dormido a las 04:00, launchd dispara la corrida
+       al despertarse o encenderse. Sin esto, una sesión de sueño larga = run
+       saltada. Crítico para uso intermitente del portátil. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- Logs: stdout/stderr de la corrida (también escribimos a log propio
+       en infra/launchd/logs/, esto es backup) -->
+  <key>StandardOutPath</key>
+  <string>/Users/marccortadaroca/lince/lince/infra/launchd/logs/launchd-stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/marccortadaroca/lince/lince/infra/launchd/logs/launchd-stderr.log</string>
+
+  <!-- macOS por defecto NO ejecuta agents en sueño. Cuando el Mac despierta,
+       launchd dispara las corridas pendientes. -->
+</dict>
+</plist>

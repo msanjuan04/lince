@@ -302,6 +302,7 @@ export async function runEvaluateZones(
           mainImageUrl: property.mainImageUrl,
           previousPrice,
           discountPct,
+          cadastralRef: property.cadastralRef,
         },
         flipMarginPct: flipEstimate.grossMarginPct,
         flipMarginEur: flipEstimate.grossMarginEur,
@@ -317,10 +318,14 @@ export async function runEvaluateZones(
         // Contamos éxito como "al menos UN chat recibió". Antes contaba como
         // failed si UNO fallaba aunque otros recibieran — bug que ensuciaba el
         // reporte y bloqueaba contadores de sent.
+        //
+        // Fallback foto → texto: si la URL de imagen no es válida para Telegram
+        // (caso típico: BOE/Pisos con URL relativa o redirect a HTML), reintenta
+        // sin foto. Mejor recibir el texto sin foto que perder la alerta.
         let anyDelivered = false;
         let lastError: string | undefined;
         for (const chatId of tgChatIds) {
-          const r = photoUrl
+          let r = photoUrl
             ? await tg.sendPhoto({
                 chatId,
                 photoUrl,
@@ -333,6 +338,21 @@ export async function runEvaluateZones(
                 parseMode: 'HTML',
                 disableWebPagePreview: false,
               });
+          if (
+            !r.ok &&
+            photoUrl &&
+            r.error &&
+            /wrong type of the web page content|wrong file identifier|failed to get http url content|PHOTO_INVALID/i.test(
+              r.error,
+            )
+          ) {
+            r = await tg.sendMessage({
+              chatId,
+              text: html,
+              parseMode: 'HTML',
+              disableWebPagePreview: false,
+            });
+          }
           if (r.ok) anyDelivered = true;
           else lastError = r.error;
         }
