@@ -303,6 +303,19 @@ export async function runEvaluateZones(
           previousPrice,
           discountPct,
           cadastralRef: property.cadastralRef,
+          catastro: (() => {
+            const c = (raw.catastro ?? null) as {
+              yearBuilt?: number | null;
+              surfaceM2?: number | null;
+              use?: string | null;
+            } | null;
+            if (!c) return null;
+            return {
+              yearBuilt: typeof c.yearBuilt === 'number' ? c.yearBuilt : null,
+              surfaceM2: typeof c.surfaceM2 === 'number' ? c.surfaceM2 : null,
+              use: typeof c.use === 'string' ? c.use : null,
+            };
+          })(),
         },
         flipMarginPct: flipEstimate.grossMarginPct,
         flipMarginEur: flipEstimate.grossMarginEur,

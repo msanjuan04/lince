@@ -25,6 +25,12 @@ export interface AlertContext {
     discountPct?: number | null;
     /** Referencia catastral (20 chars) — útil para verificación legal y consulta Sede Catastro. */
     cadastralRef?: string | null;
+    /** Datos del Catastro (Consulta_DNPRC). El valor monetario NO es público; aquí van los datos públicos del bien. */
+    catastro?: {
+      yearBuilt?: number | null;
+      surfaceM2?: number | null;
+      use?: string | null;
+    } | null;
   };
   /** Solo para price_drop: el delta % observado. */
   priceDropPct?: number;
@@ -226,12 +232,24 @@ export function renderTelegramAlert(trigger: AlertTrigger, ctx: AlertContext): s
     lines.push(`Score: <b>${ctx.score}/100</b>`);
   }
 
-  // Referencia catastral — si está, link a la Sede Electrónica del Catastro
-  // para verificación legal (m², año construcción, uso, titularidad pública).
+  // Datos del Catastro — públicos vía Consulta_DNPRC. Año construcción es
+  // proxy de coste de reforma; superficie oficial cross-checkea con el m² del
+  // anuncio (a veces el vendedor infla); uso confirma que es residencial.
+  // Valor monetario catastral NO se muestra (es dato fiscal protegido).
+  if (p.catastro && (p.catastro.yearBuilt || p.catastro.surfaceM2 || p.catastro.use)) {
+    const bits: string[] = [];
+    if (p.catastro.yearBuilt) bits.push(String(p.catastro.yearBuilt));
+    if (p.catastro.surfaceM2) bits.push(`${p.catastro.surfaceM2}m²`);
+    if (p.catastro.use) bits.push(escapeHtml(p.catastro.use));
+    lines.push(`🏛️ Catastro: ${bits.join(' · ')}`);
+  }
+
+  // Referencia catastral — link a la Sede Electrónica del Catastro para
+  // verificación legal manual (titularidad, valor catastral con cert digital).
   if (p.cadastralRef) {
     const ref = escapeHtml(p.cadastralRef);
     const sedeUrl = `https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCConCiud.aspx?RefC=${encodeURIComponent(p.cadastralRef)}`;
-    lines.push(`🏛️ <a href="${escapeAttr(sedeUrl)}">Ref. catastral: <code>${ref}</code></a>`);
+    lines.push(`🔗 <a href="${escapeAttr(sedeUrl)}">Ref. <code>${ref}</code></a>`);
   }
 
   lines.push('');
