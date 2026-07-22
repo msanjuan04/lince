@@ -1,5 +1,6 @@
 packages:
   - 'apps/*'
+  - '!apps/mobile' # Expo app: self-contained con npm (Metro + pnpm monorepo da fricción)
   - 'packages/*'
   - 'workers/*'
 
