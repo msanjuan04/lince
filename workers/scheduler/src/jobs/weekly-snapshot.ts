@@ -11,6 +11,7 @@
 
 import {
   AlisedaSource,
+  AltamiraSource,
   BoeSource,
   PisosSource,
   ServihabitatSource,
@@ -68,6 +69,7 @@ const SOURCE_REGISTRY: Record<string, () => CrawlerSource> = {
   solvia: () => new SolviaSource(),
   servihabitat: () => new ServihabitatSource(),
   aliseda: () => new AlisedaSource(),
+  altamira: () => new AltamiraSource(),
 };
 
 export async function runWeeklySnapshot(

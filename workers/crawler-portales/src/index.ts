@@ -6,6 +6,7 @@ export { BoeSource } from './sources/boe';
 export { PisosSource } from './sources/pisos';
 export { ServihabitatSource } from './sources/servihabitat';
 export { AlisedaSource } from './sources/aliseda';
+export { AltamiraSource } from './sources/altamira';
 export { runSource } from './orchestrator';
 export type {
   CrawlerSource,

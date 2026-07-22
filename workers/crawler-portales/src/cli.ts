@@ -8,6 +8,7 @@ import { BoeSource } from './sources/boe';
 import { PisosSource } from './sources/pisos';
 import { ServihabitatSource } from './sources/servihabitat';
 import { AlisedaSource } from './sources/aliseda';
+import { AltamiraSource } from './sources/altamira';
 import { runSource } from './orchestrator';
 import type { CrawlerSource } from './sources/types';
 
@@ -49,6 +50,7 @@ const SOURCES: Record<string, () => CrawlerSource> = {
   pisos: () => new PisosSource(),
   servihabitat: () => new ServihabitatSource(),
   aliseda: () => new AlisedaSource(),
+  altamira: () => new AltamiraSource(),
 };
 
 async function main(): Promise<void> {

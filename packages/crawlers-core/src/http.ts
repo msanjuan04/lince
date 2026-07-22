@@ -18,6 +18,10 @@ export type FetchOptions = {
   backoffBaseMs?: number;
   /** Permitir respuestas con código de error sin lanzar. Default false. */
   allowNonOk?: boolean;
+  /** Método HTTP. Default GET. Usar POST para APIs internas tipo Altamira. */
+  method?: 'GET' | 'POST';
+  /** Body a enviar (ya serializado, p.ej. JSON.stringify). Solo con POST. */
+  body?: string;
 };
 
 export class HttpError extends Error {
@@ -40,6 +44,8 @@ export async function fetchWithRetry(url: string, opts: FetchOptions = {}): Prom
     maxRetries = 2,
     backoffBaseMs = 5000,
     allowNonOk = false,
+    method = 'GET',
+    body,
   } = opts;
 
   const exec = async (): Promise<Response> => {
@@ -56,13 +62,14 @@ export async function fetchWithRetry(url: string, opts: FetchOptions = {}): Prom
       // al caller — no los envolvemos en try/catch porque solo re-lanzaríamos.
       // Los crawlers ya catchean arriba y siguen.
       const res = await fetch(url, {
-        method: 'GET',
+        method,
         headers: {
           'User-Agent': LINCE_USER_AGENT,
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'es-ES,es;q=0.9,en;q=0.7',
           ...headers,
         },
+        ...(body != null ? { body } : {}),
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.status === 429 || res.status === 503) {
