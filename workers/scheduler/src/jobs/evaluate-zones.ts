@@ -131,11 +131,15 @@ export async function runEvaluateZones(
         if (MIN_BELOW_ZONE_PCT > 0) {
           const zoneAvg = property.zoneAvgPricePerM2 ? Number(property.zoneAvgPricePerM2) : null;
           const propEurM2 = property.pricePerM2 ? Number(property.pricePerM2) : null;
+          const MIN_EUR_M2 = Number(process.env['MIN_EUR_M2_FLOOR'] ?? '500');
+          const MAX_M2 = Number(process.env['MAX_M2_SANITY'] ?? '600');
           if (
             zoneAvg === null ||
             zoneAvg <= 0 ||
             propEurM2 === null ||
             propEurM2 <= 0 ||
+            propEurM2 < MIN_EUR_M2 ||
+            (property.m2 != null && property.m2 > MAX_M2) ||
             (zoneAvg - propEurM2) / zoneAvg < MIN_BELOW_ZONE_PCT
           ) {
             alertsSkipped += 1;
@@ -252,6 +256,19 @@ export async function runEvaluateZones(
           await zoneAlertsRepo.markAlertSkipped(
             alert.id,
             'sin €/m² de zona (zoneAvgPricePerM2) para evaluar el descuento',
+          );
+          alertsSkipped += 1;
+          continue;
+        }
+        // Guarda de cordura: €/m² implausiblemente bajo o m² gigante = casi
+        // siempre parcela/edificio mal etiquetado (m² del solar, no de la
+        // vivienda) → descuento falso. Descartamos. Umbrales por env.
+        const MIN_EUR_M2 = Number(process.env['MIN_EUR_M2_FLOOR'] ?? '500');
+        const MAX_M2 = Number(process.env['MAX_M2_SANITY'] ?? '600');
+        if (propEurM2 < MIN_EUR_M2 || (property.m2 != null && property.m2 > MAX_M2)) {
+          await zoneAlertsRepo.markAlertSkipped(
+            alert.id,
+            `descartado por cordura (€/m² ${propEurM2.toFixed(0)} o m² ${property.m2 ?? '?'}) — probable parcela/edificio`,
           );
           alertsSkipped += 1;
           continue;
