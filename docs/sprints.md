@@ -31,8 +31,9 @@ delante de este doc; lo que sigue está verificado contra el repo.
 
 ### Sprint 2 — Crawlers de portales ✅ (en producción)
 
-- [x] Sources implementados: **Pisos.com**, **BOE**, **Solvia**, **Servihabitat**, **Aliseda**
-- [x] Smoke de los 5 sources en vivo OK: 15/15 propiedades, 0 errores (2026-07-22)
+- [x] Sources implementados: **Pisos.com**, **BOE**, **Solvia**, **Servihabitat**, **Aliseda**, **Altamira**
+- [x] Smoke de los 5 primeros en vivo OK: 15/15 propiedades, 0 errores (2026-07-22)
+- [x] **Altamira** (doValue) vía API interna POST `/nodejs/getResultados` — smoke 6/6, 0 errores (2026-07-22). Requiere UA de navegador (ver docs/legal.md)
 - [x] **Aliseda** vía API interna (`laravel.alisedainmobiliaria.com/api/v2/new-search`), no Playwright
 - [x] Filtro estricto de provincia Pisos.com (descarta CP que no empiece por 08/17/25/43)
 - [x] `city` derivada del slug en Pisos.com (ya no queda null)
@@ -46,10 +47,25 @@ delante de este doc; lo que sigue está verificado contra el repo.
 - [ ] Dashboard de oportunidades — pendiente de repaso/QA
 - [ ] Alertas por email (Resend) — pendiente
 
-## Pendientes / próximos
+## Servicers pedidos por el cliente (act. 2026-07-22)
 
-- [ ] Crawler **Haya**, **Casaktua**, **Anida** (aún sin implementar)
-- [ ] Verificar salud periódica del resto de sources (smoke programado)
+Investigados los 7 servicers que pidió el cliente. La mayoría ya están cubiertos:
+
+| Servicer     | Estado                       | Nota                                                                                                                                                                                                       |
+| ------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Servihabitat | ✅ Implementado              | CaixaBank                                                                                                                                                                                                  |
+| Aliseda      | ✅ Implementado              | Santander/Blackstone                                                                                                                                                                                       |
+| Altamira     | ✅ Implementado (2026-07-22) | doValue, API interna                                                                                                                                                                                       |
+| Intrum       | ✅ = Solvia (ya existe)      | vende bajo marca Solvia; `haya.es`→Solvia; Casaktua caído                                                                                                                                                  |
+| Anticipa     | ✅ Cubierto por Aliseda      | sin portal propio (Hola Pisos muerto)                                                                                                                                                                      |
+| **Diglo**    | ⏳ En construcción           | `digloservicer.com`, HTML SSR. Pega: no publica CP (derivar por reverse-geocode Nominatim); HTML de listado inconsistente (lat/lon solo en algunos), m² solo en ficha de detalle. Requiere build cuidadoso |
+| **Hipoges**  | ⏳ Pendiente recon           | `realestate.hipoges.com` (SPA); API interna por localizar (network capture)                                                                                                                                |
+
+## Otros pendientes
+
+- [ ] Dashboard de oportunidades — repaso/QA
+- [ ] Alertas por email (Resend)
+- [ ] Verificar salud periódica de sources (smoke programado)
 
 ## Open questions / TODO para Marc
 
