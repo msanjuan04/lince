@@ -6,12 +6,16 @@
 import { SolviaSource } from './sources/solvia';
 import { BoeSource } from './sources/boe';
 import { PisosSource } from './sources/pisos';
+import { ServihabitatSource } from './sources/servihabitat';
+import { AlisedaSource } from './sources/aliseda';
 import type { CrawlerSource } from './sources/types';
 
 const SOURCES: Record<string, () => CrawlerSource> = {
   solvia: () => new SolviaSource(),
   boe: () => new BoeSource(),
   pisos: () => new PisosSource(),
+  servihabitat: () => new ServihabitatSource(),
+  aliseda: () => new AlisedaSource(),
 };
 
 async function main(): Promise<void> {
