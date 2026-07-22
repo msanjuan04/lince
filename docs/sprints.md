@@ -15,7 +15,12 @@
 
 Cada sprint termina con: demo en local, push a `main` con tag `sprint-N`, update de `CLAUDE.md`, lista de open questions.
 
-## Estado actual — Sprint 1 (Lince Pulse Fase 1 ✅)
+## Estado actual (act. 2026-07-22)
+
+Sprint 1 completo y Sprints 2–3 sustancialmente entregados. El código va por
+delante de este doc; lo que sigue está verificado contra el repo.
+
+### Sprint 1 — Setup y fundamentos ✅
 
 - [x] Repo bootstrapeado en `lince/`
 - [x] Naming cerrado en **Lince** (2026-05-11)
@@ -23,16 +28,27 @@ Cada sprint termina con: demo en local, push a `main` con tag `sprint-N`, update
 - [x] Supabase Frankfurt conectado (proyecto `ribgzxsseihjwjflzqlw`)
 - [x] `packages/crawlers-core` con rate-limit, http (UA Lince), parsers tolerantes
 - [x] `packages/db/src/repositories/` con `upsertProperty` y `crawlerRuns`
-- [x] `workers/crawler-portales` con **Pisos.com**, **BOE** y **Solvia**, orchestrator y CLI
-- [x] Smoke en producción: 25 propiedades Pisos.com + 15 BOE en DB. 0 errores.
 
-## Pendientes Fase 1.B
+### Sprint 2 — Crawlers de portales ✅ (en producción)
 
-- [ ] Crawler **Aliseda** (SPA Angular, Playwright o API)
-- [ ] Verificar URL de **Haya, Casaktua, Anida**
-- [ ] Filtro estricto provincia Pisos.com (CP que no empieza por 08/17/25/43)
-- [ ] Resolver `city` null en Pisos.com (derivar desde CP)
-- [ ] Integrar Catastro como enriquecedor (ref catastral → m², año, uso)
+- [x] Sources implementados: **Pisos.com**, **BOE**, **Solvia**, **Servihabitat**, **Aliseda**
+- [x] **Aliseda** vía API interna (`laravel.alisedainmobiliaria.com/api/v2/new-search`), no Playwright — smoke OK (3/3, 0 errores, 2026-07-22)
+- [x] Filtro estricto de provincia Pisos.com (descarta CP que no empiece por 08/17/25/43)
+- [x] `city` derivada del slug en Pisos.com (ya no queda null)
+- [x] Catastro integrado como enriquecedor (`workers/scheduler/src/enrichers/catastro.ts` → año, superficie, uso)
+
+### Sprint 3 — Inteligencia y alertas 🟡 (mayoría hecha)
+
+- [x] `opportunityScore` + `flip-estimator` (margen bruto, umbrales calibrables por env)
+- [x] Alertas **Telegram** (HTML) y **WhatsApp** (texto) con los 3 datos clave: tiempo publicado, histórico de rebajas, datos de Catastro (+ link a Sede Electrónica). Valor catastral monetario NO se expone (dato fiscal protegido)
+- [x] Evaluación de zonas con dedup `new_property`/`price_drop` por propertyId
+- [ ] Dashboard de oportunidades — pendiente de repaso/QA
+- [ ] Alertas por email (Resend) — pendiente
+
+## Pendientes / próximos
+
+- [ ] Crawler **Haya**, **Casaktua**, **Anida** (aún sin implementar)
+- [ ] Verificar salud periódica del resto de sources (smoke programado)
 
 ## Open questions / TODO para Marc
 
