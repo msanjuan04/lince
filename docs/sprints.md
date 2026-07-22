@@ -32,7 +32,8 @@ delante de este doc; lo que sigue está verificado contra el repo.
 ### Sprint 2 — Crawlers de portales ✅ (en producción)
 
 - [x] Sources implementados: **Pisos.com**, **BOE**, **Solvia**, **Servihabitat**, **Aliseda**
-- [x] **Aliseda** vía API interna (`laravel.alisedainmobiliaria.com/api/v2/new-search`), no Playwright — smoke OK (3/3, 0 errores, 2026-07-22)
+- [x] Smoke de los 5 sources en vivo OK: 15/15 propiedades, 0 errores (2026-07-22)
+- [x] **Aliseda** vía API interna (`laravel.alisedainmobiliaria.com/api/v2/new-search`), no Playwright
 - [x] Filtro estricto de provincia Pisos.com (descarta CP que no empiece por 08/17/25/43)
 - [x] `city` derivada del slug en Pisos.com (ya no queda null)
 - [x] Catastro integrado como enriquecedor (`workers/scheduler/src/enrichers/catastro.ts` → año, superficie, uso)
