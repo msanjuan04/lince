@@ -115,9 +115,34 @@ export async function runEvaluateZones(
       if (opts.dryRun) {
         const property = await prisma.property.findUnique({
           where: { id: task.propertyId },
-          select: { price: true, m2: true, postalCode: true },
+          select: {
+            price: true,
+            m2: true,
+            postalCode: true,
+            pricePerM2: true,
+            zoneAvgPricePerM2: true,
+          },
         });
         if (!property) continue;
+        alertsCreated += 1;
+
+        // Mismo gate de €/m² vs zona que en la rama real.
+        const MIN_BELOW_ZONE_PCT = Number(process.env['MIN_BELOW_ZONE_PCT'] ?? '0.20');
+        if (MIN_BELOW_ZONE_PCT > 0) {
+          const zoneAvg = property.zoneAvgPricePerM2 ? Number(property.zoneAvgPricePerM2) : null;
+          const propEurM2 = property.pricePerM2 ? Number(property.pricePerM2) : null;
+          if (
+            zoneAvg === null ||
+            zoneAvg <= 0 ||
+            propEurM2 === null ||
+            propEurM2 <= 0 ||
+            (zoneAvg - propEurM2) / zoneAvg < MIN_BELOW_ZONE_PCT
+          ) {
+            alertsSkipped += 1;
+            continue;
+          }
+        }
+
         const expectedSale = estimateSalePricePerM2FromReference(property.postalCode, {
           useMaxPremium: true,
           safetyMarginPct: 0.1,
@@ -137,7 +162,6 @@ export async function runEvaluateZones(
         } else {
           alertsSent += 1;
         }
-        alertsCreated += 1;
         continue;
       }
 
@@ -193,6 +217,7 @@ export async function runEvaluateZones(
         solvia: 'Solvia',
         servihabitat: 'Servihabitat (CaixaBank)',
         aliseda: 'Aliseda (Santander/SAREB)',
+        altamira: 'Altamira (doValue)',
       };
 
       // Extraer descuento de rawData según la fuente (cada servicer guarda
@@ -213,6 +238,35 @@ export async function runEvaluateZones(
       // (€/m² reforma a coste material). Si falta dato crítico (m² o referencia
       // de mercado), el helper devuelve null y la alerta lo omite — no inventa.
       const priceNum = property.price ? Number(property.price) : null;
+
+      // GATE €/m² vs zona (filtro esencial pedido): solo alertamos propiedades
+      // cuyo €/m² esté al menos MIN_BELOW_ZONE_PCT por debajo de la mediana €/m²
+      // observada de su zona (zoneAvgPricePerM2, que calcula score-properties).
+      // Sin ese dato de zona no podemos confirmar el descuento → saltamos: el
+      // descuento vs zona ES la señal, no queremos ruido sin ella.
+      const MIN_BELOW_ZONE_PCT = Number(process.env['MIN_BELOW_ZONE_PCT'] ?? '0.20');
+      if (MIN_BELOW_ZONE_PCT > 0) {
+        const zoneAvg = property.zoneAvgPricePerM2 ? Number(property.zoneAvgPricePerM2) : null;
+        const propEurM2 = property.pricePerM2 ? Number(property.pricePerM2) : null;
+        if (zoneAvg === null || zoneAvg <= 0 || propEurM2 === null || propEurM2 <= 0) {
+          await zoneAlertsRepo.markAlertSkipped(
+            alert.id,
+            'sin €/m² de zona (zoneAvgPricePerM2) para evaluar el descuento',
+          );
+          alertsSkipped += 1;
+          continue;
+        }
+        const belowPct = (zoneAvg - propEurM2) / zoneAvg;
+        if (belowPct < MIN_BELOW_ZONE_PCT) {
+          await zoneAlertsRepo.markAlertSkipped(
+            alert.id,
+            `€/m² solo ${(belowPct * 100).toFixed(0)}% bajo zona < umbral ${(MIN_BELOW_ZONE_PCT * 100).toFixed(0)}%`,
+          );
+          alertsSkipped += 1;
+          continue;
+        }
+      }
+
       const expectedSale = estimateSalePricePerM2FromReference(property.postalCode, {
         useMaxPremium: true,
         safetyMarginPct: 0.1,
