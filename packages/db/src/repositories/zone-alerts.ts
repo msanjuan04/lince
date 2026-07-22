@@ -17,6 +17,18 @@ export async function upsertZoneAlert(input: CreateZoneAlertInput): Promise<{
   created: boolean;
   status: ZoneAlertStatus;
 }> {
+  // Check first para evitar el ruido de logs de Prisma cuando hay duplicado.
+  // Más limpio que try/catch sobre P2002, que loggea como error igualmente.
+  const existing = await prisma.zoneAlert.findFirst({
+    where: {
+      zoneId: input.zoneId,
+      propertyId: input.propertyId,
+      trigger: input.trigger,
+    },
+    select: { id: true, status: true },
+  });
+  if (existing) return { id: existing.id, created: false, status: existing.status };
+
   try {
     const row = await prisma.zoneAlert.create({
       data: {
@@ -31,8 +43,9 @@ export async function upsertZoneAlert(input: CreateZoneAlertInput): Promise<{
     });
     return { id: row.id, created: true, status: row.status };
   } catch (err) {
+    // Race condition: otro proceso creó la fila entre nuestro findFirst y create.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      const existing = await prisma.zoneAlert.findFirst({
+      const racer = await prisma.zoneAlert.findFirst({
         where: {
           zoneId: input.zoneId,
           propertyId: input.propertyId,
@@ -40,7 +53,7 @@ export async function upsertZoneAlert(input: CreateZoneAlertInput): Promise<{
         },
         select: { id: true, status: true },
       });
-      if (existing) return { id: existing.id, created: false, status: existing.status };
+      if (racer) return { id: racer.id, created: false, status: racer.status };
     }
     throw err;
   }

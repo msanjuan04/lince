@@ -62,6 +62,8 @@ export async function runEvaluateZones(
   const lookbackHours = opts.newPropertyLookbackHours ?? 168;
   const dropDays = opts.priceDropLookbackDays ?? 14;
   const dropPct = opts.priceDropMinPct ?? 0.05;
+  // Baremos del flip-estimator. Calibrables via env sin tocar código.
+  const REFORM_EUR_M2 = Number(process.env['REFORM_EUR_M2'] ?? '600');
 
   const zones = await zonesRepo.listActiveZones();
   console.log(`[evaluate-zones] ${zones.length} zonas activas`);
@@ -88,13 +90,19 @@ export async function runEvaluateZones(
     const newMatches = await zonesRepo.findMatchingPropertyIds(zone.id, since);
     const dropMatches = await zonesRepo.findPriceDropMatches(zone.id, dropDays, dropPct);
 
+    // Dedup por propertyId: si una propiedad aparece en newMatches Y dropMatches
+    // (ej. recién añadida con un precio ya rebajado), solo enviamos una alerta.
+    // Preferimos price_drop porque incluye más información de contexto.
+    const dropSet = new Set(dropMatches);
     const tasks: Array<{ propertyId: string; trigger: AlertTrigger }> = [
-      ...newMatches.map((id) => ({ propertyId: id, trigger: 'new_property' as const })),
+      ...newMatches
+        .filter((id) => !dropSet.has(id))
+        .map((id) => ({ propertyId: id, trigger: 'new_property' as const })),
       ...dropMatches.map((id) => ({ propertyId: id, trigger: 'price_drop' as const })),
     ];
 
     console.log(
-      `[evaluate-zones] zone="${zone.name ?? zone.id.slice(0, 8)}" new=${newMatches.length} priceDrops=${dropMatches.length}`,
+      `[evaluate-zones] zone="${zone.name ?? zone.id.slice(0, 8)}" new=${newMatches.length} priceDrops=${dropMatches.length} tasks=${tasks.length}`,
     );
 
     for (const task of tasks) {
@@ -117,13 +125,13 @@ export async function runEvaluateZones(
         const fe = computeFlipEstimate({
           listPrice: property.price ? Number(property.price) : null,
           m2: property.m2,
-          eurM2Reform: 400,
+          eurM2Reform: REFORM_EUR_M2,
           expectedSaleEurM2: expectedSale?.eurM2 ?? null,
           expectedSaleSource: expectedSale?.source ?? null,
           monthsToSell: 6,
           saleCommissionPct: 0.03,
         });
-        const MIN = Number(process.env['FLIP_MIN_MARGIN_PCT'] ?? '0.25');
+        const MIN = Number(process.env['FLIP_MIN_MARGIN_PCT'] ?? '0.18');
         if (fe.grossMarginPct !== null && fe.grossMarginPct < MIN) {
           alertsSkipped += 1;
         } else {
@@ -212,7 +220,7 @@ export async function runEvaluateZones(
       const flipEstimate = computeFlipEstimate({
         listPrice: priceNum,
         m2: property.m2,
-        eurM2Reform: 400, // contacto reforma a coste material (no 700€/m² medio mercado)
+        eurM2Reform: REFORM_EUR_M2,
         expectedSaleEurM2: expectedSale?.eurM2 ?? null,
         expectedSaleSource: expectedSale?.source ?? null,
         monthsToSell: 6,
@@ -223,7 +231,7 @@ export async function runEvaluateZones(
       // mínimo, saltamos la alerta. Si no se puede calcular (faltan datos),
       // dejamos pasar — el usuario decide con los datos que sí hay. Política
       // explícita: mejor "no sé, te lo enseño" que "ruido por defecto".
-      const MIN_FLIP_MARGIN_PCT = Number(process.env['FLIP_MIN_MARGIN_PCT'] ?? '0.25');
+      const MIN_FLIP_MARGIN_PCT = Number(process.env['FLIP_MIN_MARGIN_PCT'] ?? '0.18');
       if (
         flipEstimate.grossMarginPct !== null &&
         flipEstimate.grossMarginPct < MIN_FLIP_MARGIN_PCT

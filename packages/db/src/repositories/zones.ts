@@ -104,6 +104,9 @@ export async function findMatchingPropertyIds(zoneId: string, since?: Date): Pro
   if (filters.types && filters.types.length > 0) {
     where.type = { in: filters.types };
   }
+  if (filters.minScore != null) {
+    where.opportunityScore = { gte: filters.minScore };
+  }
   if (since) {
     where.firstSeen = { gte: since };
   }
