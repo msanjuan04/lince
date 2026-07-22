@@ -71,9 +71,13 @@ interface UseFlipPresetsResult {
 export function useFlipPresets(): UseFlipPresetsResult {
   const [presets, setPresets] = useState<FlipPreset[]>([]);
 
-  // Cargar al montar
+  // Cargar al montar. El setState va dentro del effect a propósito: hidratamos
+  // desde localStorage solo en cliente para evitar un mismatch de hidratación
+  // SSR (loadFromStorage devuelve [] en server). Es una carga única al montar,
+  // no un bucle de renders, así que la regla no aplica aquí.
   useEffect(() => {
     const loaded = loadFromStorage();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hidratación única en cliente (ver nota arriba)
     setPresets(loaded);
 
     function onStorage(e: StorageEvent) {

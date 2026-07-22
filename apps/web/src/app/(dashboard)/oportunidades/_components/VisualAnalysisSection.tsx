@@ -168,7 +168,7 @@ function AnalysisResult({
               €/m² reforma estimado
             </span>
             <span className="text-muted-foreground text-[11px]">
-              Aplica este valor en el panel "Filtros flip" para recalcular margen
+              Aplica este valor en el panel «Filtros flip» para recalcular margen
             </span>
           </div>
           <span className="font-mono text-2xl font-medium tabular-nums">

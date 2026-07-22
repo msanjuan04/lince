@@ -157,8 +157,8 @@ function AbsorptionCard({ absorption }: { absorption: AbsorptionView }) {
         </span>
       </div>
       <p className="text-muted-foreground/80 text-[11px] leading-relaxed">
-        Mediana real entre `first_seen` y la primera ausencia en el crawler. Proxy de "vendida o
-        retirada". Alimenta el ciclo del flip para anualizar el margen.
+        Mediana real entre `first_seen` y la primera ausencia en el crawler. Proxy de «vendida o
+        retirada». Alimenta el ciclo del flip para anualizar el margen.
       </p>
     </div>
   );

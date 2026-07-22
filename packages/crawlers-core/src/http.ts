@@ -3,7 +3,7 @@
 // si quiere texto, json, o stream.
 
 import { LINCE_USER_AGENT } from './user-agent';
-import { RateLimiter, backoffMs, sleep } from './rate-limit';
+import { type RateLimiter, backoffMs, sleep } from './rate-limit';
 
 export type FetchOptions = {
   /** Headers extra (Accept, Referer, etc.). */
@@ -52,35 +52,32 @@ export async function fetchWithRetry(url: string, opts: FetchOptions = {}): Prom
       // SÍ aborta el await fetch, donde antes podía quedarse colgado y
       // bloquear el run del crawler durante horas. Lo descubrí 2026-05-19
       // tras encontrar un proceso de Pisos.com colgado 11h.
-      try {
-        const res = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'User-Agent': LINCE_USER_AGENT,
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.7',
-            ...headers,
-          },
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        if (res.status === 429 || res.status === 503) {
-          if (attempt < maxRetries) {
-            const wait = backoffMs(attempt, backoffBaseMs, 2, 60_000);
-            attempt += 1;
-            await sleep(wait);
-            continue;
-          }
+      // AbortError (timeout) y los 429/503 que ya agotaron retries se propagan
+      // al caller — no los envolvemos en try/catch porque solo re-lanzaríamos.
+      // Los crawlers ya catchean arriba y siguen.
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': LINCE_USER_AGENT,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.7',
+          ...headers,
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (res.status === 429 || res.status === 503) {
+        if (attempt < maxRetries) {
+          const wait = backoffMs(attempt, backoffBaseMs, 2, 60_000);
+          attempt += 1;
+          await sleep(wait);
+          continue;
         }
-        if (!res.ok && !allowNonOk) {
-          const body = await res.text().catch(() => '');
-          throw new HttpError(res.status, url, body.slice(0, 500));
-        }
-        return res;
-      } catch (err) {
-        // AbortError (timeout) + 429/503 que ya agotaron retries: re-lanzar
-        // para que el caller decida (los crawlers ya catchean y siguen).
-        throw err;
       }
+      if (!res.ok && !allowNonOk) {
+        const body = await res.text().catch(() => '');
+        throw new HttpError(res.status, url, body.slice(0, 500));
+      }
+      return res;
     }
   };
 

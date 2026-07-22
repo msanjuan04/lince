@@ -4,7 +4,7 @@
 // y canales de alerta. `findMatchingProperties` aplica los filtros sobre la
 // tabla properties para obtener qué propiedades activas matchean.
 
-import { Prisma, prisma } from '../index';
+import { type Prisma, prisma } from '../index';
 
 export interface ZoneInput {
   agencyId: string;

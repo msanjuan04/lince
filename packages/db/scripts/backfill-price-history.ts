@@ -2,7 +2,7 @@
 // inserta una fila baseline con oldPrice=null, newPrice=propiedad.price,
 // observedAt=firstSeen. Una sola ejecución.
 
-import { prisma, Prisma } from '../src/index';
+import { prisma, type Prisma } from '../src/index';
 
 async function main(): Promise<void> {
   const properties = await prisma.property.findMany({
