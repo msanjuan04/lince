@@ -11,6 +11,7 @@
     "build": "turbo run build",
     "dev": "node scripts/link-env.mjs && turbo run dev",
     "dev:stop": "for port in 3000 3001; do lsof -tiTCP:$port -sTCP:LISTEN | xargs kill 2>/dev/null || true; done",
+    "deploy": "bash infra/deploy.sh",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
